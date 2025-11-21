@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
@@ -13,26 +12,21 @@ export const LocationSelect: React.FC = () => {
   const navigate = useNavigate();
   const t = translations[language];
 
-  // 'COUNTRY' or 'CITY'
   const [step, setStep] = useState<'COUNTRY' | 'CITY'>('COUNTRY');
   const [selectedCountry, setSelectedCountry] = useState<LocationContext | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestedCountry, setSuggestedCountry] = useState<LocationContext | null>(null);
   const [combinedResults, setCombinedResults] = useState<any[]>([]);
   
-  // Google Search State
   const [isGoogleLoaded, setIsGoogleLoaded] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Simulate phone number detection (Czechia default)
   const mockUserPhoneCode = '420'; 
 
-  // 1. Load Google Maps Script on Mount
   useEffect(() => {
       loadGoogleMapsScript().then(() => setIsGoogleLoaded(true));
   }, []);
 
-  // 2. Suggest Country
   useEffect(() => {
       if (step === 'COUNTRY' && !searchQuery) {
           const found = availableLocations.find(l => l.type === LocationType.COUNTRY && l.phoneCode === mockUserPhoneCode);
@@ -40,13 +34,11 @@ export const LocationSelect: React.FC = () => {
       }
   }, [availableLocations, step, searchQuery]);
 
-  // 3. Robust Search Effect (Local + Google Parallel)
   useEffect(() => {
       if (searchQuery.length > 1) {
           setIsSearching(true);
           
           const runSearch = async () => {
-              // A. Define Local Matches based on Step
               let localMatches: LocationContext[] = [];
               
               if (step === 'COUNTRY') {
@@ -62,22 +54,19 @@ export const LocationSelect: React.FC = () => {
                   );
               }
 
-              // Format Local Results
               const localFormatted = localMatches.map(l => ({
-                  id: l.id, // Keep existing ID
-                  place_id: l.id, // Fallback
+                  id: l.id, 
+                  place_id: l.id, 
                   description: l.name,
                   structured_formatting: {
                       main_text: l.name,
                       secondary_text: step === 'COUNTRY' ? 'Country' : selectedCountry?.name
                   },
-                  originalObj: l // Keep ref to full object for flags etc
+                  originalObj: l 
               }));
 
-              // SHOW LOCAL RESULTS IMMEDIATELY
               setCombinedResults(localFormatted);
 
-              // B. Google Search (Async with Timeout)
               if (isGoogleLoaded) {
                   try {
                       const timeoutPromise = new Promise<GooglePlaceResult[]>((resolve) => 
@@ -88,23 +77,19 @@ export const LocationSelect: React.FC = () => {
                       if (step === 'COUNTRY') {
                           googlePromise = searchCountries(searchQuery);
                       } else if (step === 'CITY' && selectedCountry) {
-                          // Use country ISO code (e.g. 'cz', 'de') as component restriction.
-                          // If it's a Google country, we stored the isoCode in handleCountrySelect.
-                          // If it's a local country, the ID is usually the code.
+                          // Strict filtering: Use ISO code if available, else try ID (if local)
                           const code = selectedCountry.isoCode || (selectedCountry.id.length === 2 ? selectedCountry.id : undefined);
                           googlePromise = searchCities(searchQuery, code);
                       } else {
                           googlePromise = Promise.resolve([]);
                       }
                       
-                      // Race against timeout
                       const googleRes = await Promise.race([googlePromise, timeoutPromise]);
 
                       if (googleRes && googleRes.length > 0) {
                           setCombinedResults(prev => {
                               const merged = [...prev];
                               googleRes.forEach(g => {
-                                  // Avoid duplicates based on main text
                                   if (!merged.some(existing => existing.structured_formatting.main_text === g.structured_formatting.main_text)) {
                                       merged.push(g);
                                   }
@@ -120,7 +105,7 @@ export const LocationSelect: React.FC = () => {
               setIsSearching(false);
           };
 
-          const timer = setTimeout(runSearch, 400); // Debounce
+          const timer = setTimeout(runSearch, 400); 
           return () => clearTimeout(timer);
       } else {
           setCombinedResults([]);
@@ -129,16 +114,15 @@ export const LocationSelect: React.FC = () => {
   }, [searchQuery, step, isGoogleLoaded, selectedCountry, availableLocations]);
 
 
-  // Handlers
   const handleCountrySelect = async (item: any) => {
     setIsSearching(true);
     let countryCtx: LocationContext;
 
     if (item.originalObj) {
-        // Local DB Country - usually id IS the code
-        countryCtx = { ...item.originalObj, isoCode: item.originalObj.id };
+        // Local DB Country
+        countryCtx = { ...item.originalObj, isoCode: item.originalObj.isoCode || item.originalObj.id };
     } else {
-        // Google Result Country - Need to fetch ISO Code for future city searches
+        // Google Result Country - Fetch ISO Code for strict filtering
         const placeId = item.place_id;
         const fetchedIsoCode = await getCountryCode(placeId);
         
@@ -146,11 +130,10 @@ export const LocationSelect: React.FC = () => {
             id: `gl_${placeId}`,
             name: item.structured_formatting.main_text,
             type: LocationType.COUNTRY,
-            flagEmoji: '🌐', // Default for new Google countries
-            parentId: null, // STRICT: Countries have NULL parent
-            isoCode: fetchedIsoCode || undefined // Save the ISO code
+            flagEmoji: '🌐', 
+            parentId: null, 
+            isoCode: fetchedIsoCode || undefined 
         };
-        // We don't need to save to DB yet, wait until city is selected or "All Country"
     }
 
     setSelectedCountry(countryCtx);
@@ -163,29 +146,25 @@ export const LocationSelect: React.FC = () => {
   const handleCitySelect = async (location: any) => {
     if (!selectedCountry) return;
 
-    // Check if it's a Google Result (needs converting) or Local
     let finalLoc: LocationContext;
 
     if (location.originalObj) {
         finalLoc = location.originalObj;
     } else if (location.place_id) {
-        // Google Result
         finalLoc = {
             id: `gl_${location.place_id}`,
             name: location.structured_formatting.main_text,
             type: LocationType.CITY,
-            parentId: selectedCountry.id // STRICT: Link to parent Country
+            parentId: selectedCountry.id 
         };
     } else {
         return;
     }
 
-    // Ensure the country is saved first if it's new
     if (selectedCountry.id.startsWith('gl_')) {
         await setLocation(selectedCountry);
     }
 
-    // This saves the city to Firestore 'locations' collection
     await setLocation(finalLoc); 
     navigate('/');
   };
@@ -284,7 +263,7 @@ export const LocationSelect: React.FC = () => {
                     </>
                 )}
                 
-                {/* 2. Results (Local + Google) */}
+                {/* 2. Results */}
                 {searchQuery ? (
                     <>
                         <h3 className="text-xs font-bold text-secondary uppercase tracking-wider mb-2 mt-4">
@@ -303,11 +282,10 @@ export const LocationSelect: React.FC = () => {
         {/* === CITY STEP === */}
         {step === 'CITY' && selectedCountry && (
             <>
-                {/* Static "All Country" Option (Only if no search) */}
+                {/* Static "All Country" Option */}
                 {!searchQuery && (
                      <button
                         onClick={() => {
-                            // Save country if new
                             if (selectedCountry.id.startsWith('gl_')) setLocation(selectedCountry);
                             setLocation(selectedCountry).then(() => navigate('/'));
                         }}
@@ -324,7 +302,7 @@ export const LocationSelect: React.FC = () => {
                     </button>
                 )}
 
-                {/* Default Popular Cities (If no search) */}
+                {/* Default Popular Cities */}
                 {!searchQuery && (
                     <>
                         <h3 className="text-xs font-bold text-secondary uppercase tracking-wider mb-2">Popular Cities</h3>
@@ -349,7 +327,7 @@ export const LocationSelect: React.FC = () => {
                     </>
                 )}
 
-                {/* Search Results (Local + Google) */}
+                {/* Search Results */}
                 {searchQuery && (
                     <>
                         <h3 className="text-xs font-bold text-secondary uppercase tracking-wider mb-2">

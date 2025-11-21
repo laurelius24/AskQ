@@ -42,15 +42,16 @@ const formatDate = (dateString: string, t: any) => {
 export const QuestionDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { currentUser, language, getUserById, getAllUsers, toggleLike, questions, subscribeToAnswers, answers, addAnswer, addReply, markAnswerAsBest, deleteQuestion, deleteAnswer, submitReport, sendTip } = useStore();
+  const { currentUser, language, getUserById, getAllUsers, toggleLike, questions, subscribeToAnswers, answers, addAnswer, addReply, markAnswerAsBest, deleteQuestion, deleteAnswer, submitReport, sendTip, incrementQuestionView } = useStore();
   const t = translations[language];
   
   useEffect(() => {
       if (id) {
           const unsub = subscribeToAnswers(id);
+          incrementQuestionView(id);
           return () => unsub();
       }
-  }, [id, subscribeToAnswers]);
+  }, [id, subscribeToAnswers, incrementQuestionView]);
 
   const currentAnswers = answers[id!] || [];
   const storeQuestion = questions.find(q => q.id === id);
@@ -134,7 +135,6 @@ export const QuestionDetail: React.FC = () => {
   const handleSubmitMainAnswer = async () => {
       if (!mainAnswerText.trim() && !mainAnswerImage) return;
       
-      // If replying to a specific answer (nested)
       if (replyingToId) {
           await addReply(storeQuestion.id, replyingToId, mainAnswerText, mainAnswerImage ? [mainAnswerImage] : []);
       } else {
@@ -290,12 +290,10 @@ export const QuestionDetail: React.FC = () => {
                 </div>
              </div>
 
-             {/* Nested Replies */}
              {answer.replies && answer.replies.length > 0 && (
                  <div className="mt-3 space-y-0">
                      {visibleReplies?.map((reply: any, idx: number) => (
                          <div key={idx} className="relative pl-6 pt-2">
-                             {/* Thread connector line */}
                              <div className="absolute left-2 top-0 bottom-0 w-px bg-white/10"></div>
                              <div className="absolute left-2 top-6 w-4 h-px bg-white/10"></div>
                              
@@ -382,7 +380,6 @@ export const QuestionDetail: React.FC = () => {
 
         <div className="flex-1 overflow-y-auto px-4 pb-32 no-scrollbar" onClick={() => setQuestionMenuOpen(false)}>
             <div className="bg-card p-5 rounded-3xl shadow-sm border border-white/5 mb-6 relative">
-                
                 <div className="flex items-center gap-3 mb-4" onClick={() => !storeQuestion.isAnonymous && navigate(`/user/${storeQuestion.authorId}`)}>
                      <div className="w-10 h-10 bg-input rounded-full flex items-center justify-center overflow-hidden border border-white/10">
                          {storeQuestion.isAnonymous ? <VenetianMask size={20}/> : <img src={questionAuthor?.avatarUrl} className="w-full h-full object-cover" alt="avatar" />}
@@ -435,7 +432,6 @@ export const QuestionDetail: React.FC = () => {
             </div>
         </div>
 
-        {/* Sticky Input Bar */}
         <div className="fixed bottom-0 left-0 right-0 bg-[#121212] border-t border-white/5 px-4 py-3 pb-safe z-40">
              {replyingToId && (
                  <div className="bg-white/5 p-2 rounded-lg mb-2 flex justify-between items-center text-xs">
@@ -500,10 +496,8 @@ export const QuestionDetail: React.FC = () => {
              </div>
         </div>
         
-        {/* Fullscreen Image Viewer */}
         {fullScreenImage && <ImageViewer src={fullScreenImage} onClose={() => setFullScreenImage(null)} />}
 
-        {/* Tipping Modal */}
         {tippingAnswerId && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in" onClick={() => setTippingAnswerId(null)}>
                 <div className="bg-card w-full max-w-xs rounded-3xl p-6 border border-white/10 shadow-2xl" onClick={e => e.stopPropagation()}>
@@ -542,7 +536,6 @@ export const QuestionDetail: React.FC = () => {
             </div>
         )}
 
-        {/* Report Modal */}
         {reportModalOpen && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in" onClick={() => setReportModalOpen(false)}>
                  <div className="bg-card w-full max-w-sm rounded-3xl p-6 border border-white/10 shadow-2xl" onClick={e => e.stopPropagation()}>
@@ -571,7 +564,6 @@ export const QuestionDetail: React.FC = () => {
             </div>
         )}
 
-        {/* Share Modal */}
         {isShareModalOpen && shareData && (
             <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 backdrop-blur-sm animate-in fade-in" onClick={() => setIsShareModalOpen(false)}>
                 <div className="bg-[#1C1C1E] w-full rounded-t-3xl p-6 border-t border-white/10 animate-in slide-in-from-bottom-10" onClick={e => e.stopPropagation()}>

@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore, CAPITAL_IDS } from '../store';
@@ -19,22 +18,18 @@ export const SelectLocationForQuestion: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [combinedResults, setCombinedResults] = useState<any[]>([]);
   
-  // Google Search State
   const [isGoogleLoaded, setIsGoogleLoaded] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
 
-  // 1. Load Google Maps Script on Mount
   useEffect(() => {
       loadGoogleMapsScript().then(() => setIsGoogleLoaded(true));
   }, []);
 
-  // 2. Robust Search Effect (Local + Google Parallel)
   useEffect(() => {
       if (searchQuery.length > 1) {
           setIsSearching(true);
           
           const runSearch = async () => {
-              // A. Define Local Matches
               let localMatches: LocationContext[] = [];
               
               if (step === 'COUNTRY') {
@@ -63,7 +58,6 @@ export const SelectLocationForQuestion: React.FC = () => {
 
               setCombinedResults(localFormatted);
 
-              // B. Google Search
               if (isGoogleLoaded) {
                   try {
                       const timeoutPromise = new Promise<GooglePlaceResult[]>((resolve) => 
@@ -74,7 +68,6 @@ export const SelectLocationForQuestion: React.FC = () => {
                       if (step === 'COUNTRY') {
                           googlePromise = searchCountries(searchQuery);
                       } else if (step === 'CITY' && selectedCountry) {
-                          // STRICT Filtering using ISO code
                           const code = selectedCountry.isoCode || (selectedCountry.id.length === 2 ? selectedCountry.id : undefined);
                           googlePromise = searchCities(searchQuery, code);
                       } else {
@@ -109,15 +102,13 @@ export const SelectLocationForQuestion: React.FC = () => {
       }
   }, [searchQuery, step, isGoogleLoaded, selectedCountry, availableLocations]);
 
-  // Handlers
   const handleCountrySelect = async (item: any) => {
     setIsSearching(true);
     let countryCtx: LocationContext;
 
     if (item.originalObj) {
-        countryCtx = { ...item.originalObj, isoCode: item.originalObj.id };
+        countryCtx = { ...item.originalObj, isoCode: item.originalObj.isoCode || item.originalObj.id };
     } else {
-        // Google Country - Fetch ISO Code
         const placeId = item.place_id;
         const fetchedIsoCode = await getCountryCode(placeId);
 
@@ -126,10 +117,9 @@ export const SelectLocationForQuestion: React.FC = () => {
             name: item.structured_formatting.main_text,
             type: LocationType.COUNTRY,
             flagEmoji: '🌐',
-            parentId: null, // STRICT
+            parentId: null, 
             isoCode: fetchedIsoCode || undefined
         };
-        // Save new country immediately to persist for the question flow
         await saveLocation(countryCtx);
     }
 
@@ -146,16 +136,14 @@ export const SelectLocationForQuestion: React.FC = () => {
     if (locationItem.originalObj) {
         finalLoc = locationItem.originalObj;
     } else if (locationItem.place_id) {
-        // Google City
         finalLoc = {
             id: `gl_${locationItem.place_id}`,
             name: locationItem.structured_formatting.main_text,
             type: LocationType.CITY,
-            parentId: selectedCountry!.id // STRICT HIERARCHY
+            parentId: selectedCountry!.id
         };
         await saveLocation(finalLoc);
     } else {
-        // Fallback
         finalLoc = locationItem as LocationContext;
     }
 
@@ -174,7 +162,6 @@ export const SelectLocationForQuestion: React.FC = () => {
     }
   };
 
-  // Sorting for default view (Capital First)
   const getDefaultCities = () => {
       if (!selectedCountry) return [];
       return availableLocations
@@ -209,7 +196,6 @@ export const SelectLocationForQuestion: React.FC = () => {
     <div className="h-screen flex flex-col bg-bg text-white page-transition overflow-hidden">
       <PageHeader title={t['ask.select_loc_title']} onBack={handleBack} />
 
-      {/* Search Bar */}
       <div className="shrink-0 px-4 py-4">
         <div className="relative">
             <Search className="absolute left-3 top-3 text-secondary" size={20} />
@@ -229,13 +215,9 @@ export const SelectLocationForQuestion: React.FC = () => {
         </div>
       </div>
 
-      {/* List */}
       <div className="flex-1 overflow-y-auto px-4 pb-10 no-scrollbar">
-        
-        {/* --- COUNTRY STEP --- */}
         {step === 'COUNTRY' && (
             <>
-                {/* 1. Static List (If no search) */}
                 {!searchQuery && (
                     availableLocations
                         .filter(l => l.type === LocationType.COUNTRY)
@@ -255,8 +237,6 @@ export const SelectLocationForQuestion: React.FC = () => {
                             </button>
                         ))
                 )}
-
-                {/* 2. Search Results (Local + Google) */}
                 {searchQuery && (
                     <>
                         {combinedResults.map(item => renderResultItem(item, false))}
@@ -268,10 +248,8 @@ export const SelectLocationForQuestion: React.FC = () => {
             </>
         )}
 
-        {/* --- CITY STEP --- */}
         {step === 'CITY' && selectedCountry && (
             <>
-                {/* 1. Whole Country Option */}
                 {!searchQuery && (
                      <button
                         onClick={() => handleFinalSelect({ originalObj: selectedCountry })}
@@ -288,7 +266,6 @@ export const SelectLocationForQuestion: React.FC = () => {
                     </button>
                 )}
 
-                {/* 2. Default List (Capitals first) - if no search */}
                 {!searchQuery && (
                     <>
                         <h3 className="text-xs font-bold text-secondary uppercase tracking-wider mb-2">Popular Cities</h3>
@@ -310,7 +287,6 @@ export const SelectLocationForQuestion: React.FC = () => {
                     </>
                 )}
 
-                {/* 3. Search Results (Local + Google) */}
                 {searchQuery && (
                     <>
                         <h3 className="text-xs font-bold text-secondary uppercase tracking-wider mb-2">Results</h3>

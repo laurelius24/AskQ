@@ -1,5 +1,4 @@
 
-
 import { GoogleGenAI } from "@google/genai";
 
 declare global {
@@ -11,7 +10,6 @@ declare global {
 }
 
 // Key provided by user for Maps JavaScript API
-// Note: This key must have BOTH "Maps JavaScript API" and "Places API" enabled in Google Cloud Console.
 const GOOGLE_API_KEY = "AIzaSyB_rbKpIk83iHDI27ww8pqd_6or-5hljwE";
 
 let isLoaded = false;
@@ -37,14 +35,12 @@ export const loadGoogleMapsScript = (): Promise<void> => {
       return;
     }
 
-    // Define the callback function globally
     window.initGoogleMapsCallback = () => {
         isLoaded = true;
         initServices();
         resolve();
     };
 
-    // Global handler for API authentication failure
     window.gm_authFailure = () => {
         console.warn("Google Maps API Authentication Error (AuthFailure). Falling back to local data.");
         isError = true;
@@ -52,7 +48,6 @@ export const loadGoogleMapsScript = (): Promise<void> => {
         resolve();
     };
 
-    // Check if script already exists
     if (document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]')) {
         if (window.google && window.google.maps) {
             isLoaded = true;
@@ -104,7 +99,6 @@ export interface GooglePlaceResult {
   };
 }
 
-// Generic internal search function
 const performSearch = (input: string, options: any): Promise<GooglePlaceResult[]> => {
   return new Promise((resolve) => {
     if (!input || isError) {
@@ -152,11 +146,10 @@ export const searchCities = (input: string, countryCode?: string): Promise<Googl
 
 export const searchCountries = (input: string): Promise<GooglePlaceResult[]> => {
     return performSearch(input, {
-        types: ['country'] // STRICTLY countries only.
+        types: ['country'] // STRICT: Only countries, no cities/regions
     });
 };
 
-// NEW: Helper to get ISO code from a Place ID (needed for strict city filtering)
 export const getCountryCode = (placeId: string): Promise<string | null> => {
     return new Promise((resolve) => {
         if (!placesService) {
