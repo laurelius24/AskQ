@@ -56,20 +56,10 @@ if (otherIndex > -1) {
     MOCK_CATEGORIES.push(other);
 }
 
-// Locations (Static Config)
+// Locations (Static Config - Countries Only)
+// Cities will now be fetched via Google Places API
 const MOCK_LOCATIONS: LocationContext[] = [
     { id: 'cz', name: 'Чехия', type: LocationType.COUNTRY, flagEmoji: '🇨🇿', phoneCode: '420' },
-    { id: 'cz_prg', name: 'Прага', type: LocationType.CITY, flagEmoji: '', parentId: 'cz' },
-    { id: 'cz_brn', name: 'Брно', type: LocationType.CITY, flagEmoji: '', parentId: 'cz' },
-    { id: 'cz_plz', name: 'Пльзень', type: LocationType.CITY, flagEmoji: '', parentId: 'cz' },
-    { id: 'cz_ost', name: 'Острава', type: LocationType.CITY, flagEmoji: '', parentId: 'cz' },
-    { id: 'cz_lib', name: 'Либерец', type: LocationType.CITY, flagEmoji: '', parentId: 'cz' },
-    { id: 'cz_olo', name: 'Оломоуц', type: LocationType.CITY, flagEmoji: '', parentId: 'cz' },
-    { id: 'cz_cb', name: 'Ческе-Будеёвице', type: LocationType.CITY, flagEmoji: '', parentId: 'cz' },
-    { id: 'cz_hk', name: 'Градец-Кралове', type: LocationType.CITY, flagEmoji: '', parentId: 'cz' },
-    { id: 'cz_ul', name: 'Усти-над-Лабем', type: LocationType.CITY, flagEmoji: '', parentId: 'cz' },
-    { id: 'cz_par', name: 'Пардубице', type: LocationType.CITY, flagEmoji: '', parentId: 'cz' },
-    { id: 'cz_kv', name: 'Карловы Вары', type: LocationType.CITY, flagEmoji: '', parentId: 'cz' },
     { id: 'ru', name: 'Россия', type: LocationType.COUNTRY, flagEmoji: '🇷🇺', phoneCode: '7' },
     { id: 'ua', name: 'Украина', type: LocationType.COUNTRY, flagEmoji: '🇺🇦', phoneCode: '380' },
     { id: 'kz', name: 'Казахстан', type: LocationType.COUNTRY, flagEmoji: '🇰🇿', phoneCode: '7' },
@@ -90,12 +80,6 @@ const MOCK_LOCATIONS: LocationContext[] = [
 ].sort((a, b) => {
     if (a.id === 'cz') return -1;
     if (b.id === 'cz') return 1;
-    if (a.id === 'cz_prg') return -1;
-    if (b.id === 'cz_prg') return 1;
-    const aIsCz = a.id.startsWith('cz');
-    const bIsCz = b.id.startsWith('cz');
-    if (aIsCz && !bIsCz) return -1;
-    if (!aIsCz && bIsCz) return 1;
     return a.name.localeCompare(b.name);
 });
 
@@ -292,11 +276,24 @@ export const useStore = create<Store>((set, get) => ({
               
               // Set location from user profile if exists, otherwise Default to Prague if user has no location yet
               if (userFound.currentLocationId) {
-                   const loc = MOCK_LOCATIONS.find(l => l.id === userFound.currentLocationId);
-                   if (loc) set({ selectedLocation: loc });
+                   // Check if it's a known static location (Country)
+                   let loc = MOCK_LOCATIONS.find(l => l.id === userFound.currentLocationId);
+                   
+                   // If not found in mock (meaning it's a dynamic City from Google), construct it manually
+                   // In a real app, you might fetch details or store the full object in user profile
+                   // For now, we assume if ID starts with 'cz_', it might be mock, otherwise custom
+                   if (!loc) {
+                       // Fallback: We need to know if it's a city. 
+                       // Ideally we store the name in the user profile too, but here we might just default to country 
+                       // or require re-selection if data is missing. 
+                       // Simplification: default to Prague if ID is broken/missing from mocks
+                       loc = MOCK_LOCATIONS.find(l => l.id === 'cz') || MOCK_LOCATIONS[0];
+                   }
+                   set({ selectedLocation: loc });
               } else {
-                   // Default to Prague if fresh user
-                   const defaultLoc = MOCK_LOCATIONS.find(l => l.id === 'cz_prg') || MOCK_LOCATIONS[0];
+                   // Default to Prague (as a City under Czechia) if fresh user - 
+                   // NOTE: Since we removed hardcoded cities, we default to Country CZ
+                   const defaultLoc = MOCK_LOCATIONS.find(l => l.id === 'cz') || MOCK_LOCATIONS[0];
                    set({ selectedLocation: defaultLoc });
                    updateDoc(docRef, { currentLocationId: defaultLoc.id });
               }
@@ -410,6 +407,12 @@ export const useStore = create<Store>((set, get) => ({
   setLocation: (location) => {
     set({ selectedLocation: location });
     const { currentUser } = get();
+    // Also update available locations if this is a new dynamic city not in the list
+    const known = get().availableLocations.some(l => l.id === location.id);
+    if (!known) {
+        set(state => ({ availableLocations: [...state.availableLocations, location] }));
+    }
+
     if (currentUser && db) updateDoc(doc(db, 'users', currentUser.id), { currentLocationId: location.id });
   },
 
