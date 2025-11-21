@@ -101,6 +101,9 @@ export const translations: Dictionary = {
     'tasks.section_done': 'Выполнено',
     'tasks.start': 'Старт',
     'tasks.reward_suffix': 'BLAST',
+    'task.monthly': 'Ежемесячный бонус',
+    'task.streak': 'Заходить 7 дней подряд',
+    'task.share': 'Поделиться приложением',
 
     // Search
     'search.title': 'Поиск',
@@ -166,11 +169,6 @@ export const translations: Dictionary = {
     'cat.services': 'Услуги',
     'cat.humor': 'Юмор',
     'cat.language': 'Язык',
-
-    // Tasks
-    'task.daily': 'Вход в приложение',
-    'task.share': 'Поделиться с другом',
-    'task.profile': 'Заполнить профиль',
 
     // Question Detail
     'q.question': 'Вопрос',

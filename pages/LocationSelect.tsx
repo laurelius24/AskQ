@@ -142,12 +142,7 @@ export const LocationSelect: React.FC = () => {
                         {renderListItem(suggestedCountry)}
                     </>
                 )}
-
-                <h3 className="text-xs font-bold text-secondary uppercase tracking-wider mb-2 mt-4">
-                    {t['loc.countries']}
-                </h3>
-                {/* Filter out suggested from general list so it doesn't appear twice */}
-                {filteredItems.filter(i => i.id !== suggestedCountry?.id).map((item) => renderListItem(item))}
+                {/* Removed full list rendering here to hide countries until search */}
             </>
         )}
         

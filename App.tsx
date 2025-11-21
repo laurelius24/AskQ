@@ -1,5 +1,4 @@
 
-
 import React, { useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
@@ -64,15 +63,24 @@ const TelegramNavigator = () => {
 // Wrapper for authenticated routes
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { currentUser } = useStore();
-    const navigate = useNavigate();
+    
+    if (!currentUser) {
+        return <Navigate to="/onboarding" replace />;
+    }
 
-    useEffect(() => {
-        if (!currentUser) {
-            navigate('/onboarding');
-        }
-    }, [currentUser, navigate]);
+    return <>{children}</>;
+};
 
-    if (!currentUser) return null;
+// Wrapper for public-only routes (Onboarding)
+// If user is logged in, they shouldn't see this, but go to Feed/Location instead
+const PublicOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const { currentUser } = useStore();
+    
+    if (currentUser) {
+        // If user has no location selected, send to location select, otherwise feed
+        const target = currentUser.currentLocationId ? '/' : '/location';
+        return <Navigate to={target} replace />;
+    }
 
     return <>{children}</>;
 };
@@ -116,8 +124,12 @@ const App: React.FC = () => {
     <HashRouter>
         <TelegramNavigator />
         <Routes>
-            {/* Public / Onboarding Route */}
-            <Route path="/onboarding" element={<Onboarding />} />
+            {/* Public / Onboarding Route - Protected against Logged In users */}
+            <Route path="/onboarding" element={
+                <PublicOnlyRoute>
+                    <Onboarding />
+                </PublicOnlyRoute>
+            } />
 
             {/* Settings & Location */}
             <Route path="/location" element={

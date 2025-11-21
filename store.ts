@@ -4,12 +4,19 @@ import { db } from './services/firebase';
 import { 
   collection, addDoc, onSnapshot, query, orderBy, doc, 
   updateDoc, arrayUnion, arrayRemove, setDoc, getDoc, 
-  where, increment, deleteDoc, getDocs
+  where, increment, deleteDoc, getDocs, runTransaction
 } from 'firebase/firestore';
 
-// --- CONSTANTS & STATIC DATA ---
-export const QUESTION_COST = 50;
+// --- ECONOMY CONSTANTS ---
+export const QUESTION_COST = 50;       // Cost to ask
+export const ANSWER_REWARD = 5;        // Reward for answering
+export const BEST_ANSWER_BONUS = 20;   // Reward if answer selected as best
+export const MONTHLY_REWARD = 150;     // 3 questions worth
+export const STREAK_REWARD = 100;      // 7 days streak
+export const SHARE_REWARD = 20;        // Share reward
+export const MIN_LIKES_FOR_BEST = 2;   // Threshold for best answer
 
+// Categories
 export const MOCK_CATEGORIES: Category[] = [
   { id: 'visa', name: 'cat.visa', icon: 'visa' },
   { id: 'money', name: 'cat.money', icon: 'money' },
@@ -48,7 +55,7 @@ if (otherIndex > -1) {
     MOCK_CATEGORIES.push(other);
 }
 
-// Static Locations
+// Locations
 const MOCK_LOCATIONS: LocationContext[] = [
     { id: 'cz', name: 'Чехия', type: LocationType.COUNTRY, flagEmoji: '🇨🇿', phoneCode: '420' },
     { id: 'cz_prg', name: 'Прага', type: LocationType.CITY, flagEmoji: '', parentId: 'cz' },
@@ -80,24 +87,17 @@ const MOCK_LOCATIONS: LocationContext[] = [
     { id: 'am', name: 'Армения', type: LocationType.COUNTRY, flagEmoji: '🇦🇲', phoneCode: '374' },
     { id: 'rs', name: 'Сербия', type: LocationType.COUNTRY, flagEmoji: '🇷🇸', phoneCode: '381' },
 ].sort((a, b) => {
-    if (a.id.startsWith('cz') && !b.id.startsWith('cz')) return -1;
-    if (!a.id.startsWith('cz') && b.id.startsWith('cz')) return 1;
+    if (a.id === 'cz') return -1;
+    if (b.id === 'cz') return 1;
+    if (a.id === 'cz_prg') return -1;
+    if (b.id === 'cz_prg') return 1;
+    const aIsCz = a.id.startsWith('cz');
+    const bIsCz = b.id.startsWith('cz');
+    if (aIsCz && !bIsCz) return -1;
+    if (!aIsCz && bIsCz) return 1;
     return a.name.localeCompare(b.name);
 });
 
-const MOCK_COUPONS: Coupon[] = [
-    { id: 'c1', title: '10% скидка в Alza', description: 'Скидка на всю электронику.', cost: 100, imageUrl: 'https://cdn.alza.cz/foto/f16/EO/EO180p1.jpg', partnerName: 'Alza.cz', promoCode: 'ASKQ-ALZA-10', expiresAt: '2025-12-31' },
-    { id: 'c2', title: 'Бесплатный кофе', description: 'Один капучино при заказе десерта.', cost: 50, imageUrl: 'https://stories.starbucks.com/uploads/2021/09/Starbucks-100-percent-ethically-sourced-coffee-feature.jpg', partnerName: 'Starbucks', promoCode: 'FREE-COFFEE-24', expiresAt: '2025-06-30' },
-    { id: 'c3', title: 'Билет в кино 1+1', description: 'Купи один билет, получи второй бесплатно.', cost: 200, imageUrl: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba', partnerName: 'CinemaCity', promoCode: 'MOVIE-NIGHT', expiresAt: '2025-09-15' },
-];
-
-const MOCK_TASKS: Task[] = [
-    { id: 't1', title: 'task.daily', reward: 2000, icon: 'calendar', isCompleted: false, type: 'DAILY' },
-    { id: 't2', title: 'task.share', reward: 1000, icon: 'share', isCompleted: false, type: 'ONE_TIME' },
-    { id: 't3', title: 'task.profile', reward: 500, icon: 'user', isCompleted: true, type: 'ONE_TIME' },
-];
-
-// --- HELPER: Sanitize Firestore Data ---
 const sanitizeData = (data: any): any => {
   if (!data) return data;
   if (typeof data !== 'object') return data;
@@ -114,7 +114,6 @@ const sanitizeData = (data: any): any => {
   return sanitized;
 };
 
-// --- STORE INTERFACE ---
 interface Store extends AppState {
   savedScrollPositions: Record<string, number>;
   questions: Question[];
@@ -122,9 +121,11 @@ interface Store extends AppState {
   categories: Category[];
   availableLocations: LocationContext[];
   availableCoupons: Coupon[];
-  tasks: Task[];
   usersMap: Record<string, User>; 
   
+  // Dynamic Tasks based on user state
+  getTasks: () => Task[];
+
   initializeListeners: () => void;
   subscribeToAnswers: (questionId: string) => () => void;
 
@@ -139,10 +140,13 @@ interface Store extends AppState {
   
   buyCoupon: (couponId: string) => boolean; 
   sendTip: (amount: number, answerId: string, currency: 'STARS' | 'COINS') => Promise<boolean>;
-  claimTaskReward: (taskId: string) => void;
+  
+  // Task Actions
+  checkAndClaimTask: (type: 'MONTHLY' | 'STREAK' | 'SHARE') => Promise<void>;
   
   addQuestion: (data: { title: string, text: string, categoryId: string, locationId: string, isAnonymous: boolean, attachments: string[], backgroundStyle?: string }) => boolean;
   addAnswer: (questionId: string, text: string, attachmentUrls: string[]) => Promise<void>;
+  markAnswerAsBest: (questionId: string, answerId: string) => Promise<void>;
   deleteQuestion: (questionId: string) => Promise<void>;
   toggleLike: (entityId: string, type: 'QUESTION' | 'ANSWER') => Promise<void>;
   
@@ -167,57 +171,41 @@ export const useStore = create<Store>((set, get) => ({
   answers: {},
   categories: MOCK_CATEGORIES,
   availableLocations: MOCK_LOCATIONS,
-  availableCoupons: MOCK_COUPONS,
-  tasks: MOCK_TASKS,
+  availableCoupons: [], 
+  questionDraft: { title: '', text: '', categoryId: '', locationId: '', isAnonymous: false, attachments: [] },
   reports: [],
   usersMap: {},
   telegramUser: null,
-  
-  questionDraft: {
-      title: '',
-      text: '',
-      categoryId: '',
-      locationId: '',
-      isAnonymous: false,
-      attachments: []
-  },
 
   initializeListeners: () => {
-      // 1. Initialize Telegram SDK
       const tg = window.Telegram?.WebApp;
       if (tg) {
           tg.ready();
           tg.expand();
           tg.setHeaderColor('#000000');
           tg.setBackgroundColor('#000000');
-          
           if (tg.initDataUnsafe?.user) {
               set({ telegramUser: tg.initDataUnsafe.user });
           }
       }
 
-      // If Firebase is not configured, we can't do much
       if (!db) {
-          console.warn("Firestore DB not found. Check configuration.");
+          console.warn("Firestore DB not found.");
           set({ isLoading: false });
           return;
       }
 
-      // 2. Setup Real-time Listeners
-      // QUESTIONS
       const qQuery = query(collection(db, 'questions'), orderBy('createdAt', 'desc'));
       const unsubQuestions = onSnapshot(qQuery, (snapshot) => {
           const questions = snapshot.docs.map(d => ({ id: d.id, ...sanitizeData(d.data()) } as Question));
           set({ questions });
       });
 
-      // USERS (Caching map for fast lookup)
       const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
           const usersMap: Record<string, User> = {};
           snapshot.forEach(doc => {
               usersMap[doc.id] = { id: doc.id, ...sanitizeData(doc.data()) } as User;
           });
-          // Also update current user if their doc changed
           const current = get().currentUser;
           if (current && usersMap[current.id]) {
               set({ currentUser: usersMap[current.id] });
@@ -225,49 +213,66 @@ export const useStore = create<Store>((set, get) => ({
           set({ usersMap });
       });
 
-      // REPORTS
-      const rQuery = query(collection(db, 'reports'), orderBy('createdAt', 'desc'));
-      const unsubReports = onSnapshot(rQuery, (snapshot) => {
-          const reports = snapshot.docs.map(d => ({ id: d.id, ...sanitizeData(d.data()) } as Report));
-          set({ reports });
+      const unsubCoupons = onSnapshot(collection(db, 'coupons'), (snapshot) => {
+          const coupons = snapshot.docs.map(d => ({ id: d.id, ...sanitizeData(d.data()) } as Coupon));
+          set({ availableCoupons: coupons });
       });
 
-      // 3. Authenticate User (Telegram > LocalStorage)
+      const unsubReports = onSnapshot(collection(db, 'reports'), (snapshot) => {
+        const reports = snapshot.docs.map(d => ({ id: d.id, ...sanitizeData(d.data()) } as Report));
+        set({ reports });
+      });
+
+      // Auth Logic with Daily Streak Check
       const authenticate = async () => {
           const { telegramUser } = get();
           let userFound = null;
+          let docRef = null;
 
           if (telegramUser) {
-              // Strategy A: Check by Telegram ID
               const q = query(collection(db, 'users'), where('telegramId', '==', telegramUser.id));
               const querySnapshot = await getDocs(q);
-              
               if (!querySnapshot.empty) {
-                  const docSnap = querySnapshot.docs[0];
-                  userFound = { id: docSnap.id, ...sanitizeData(docSnap.data()) } as User;
-                  
-                  // Sync telegram data if changed
-                  if (userFound.displayName !== telegramUser.first_name || userFound.username !== telegramUser.username) {
-                      updateDoc(docSnap.ref, {
-                          displayName: telegramUser.first_name || userFound.displayName,
-                          username: telegramUser.username || userFound.username
-                      });
-                  }
+                  docRef = querySnapshot.docs[0].ref;
+                  const d = querySnapshot.docs[0].data();
+                  userFound = { id: docRef.id, ...sanitizeData(d) } as User;
               }
           } 
 
-          // Strategy B: LocalStorage Fallback (if no TG or TG user not registered yet but saved locally)
           if (!userFound) {
               const storedId = localStorage.getItem('askq_userid');
               if (storedId) {
-                  const docSnap = await getDoc(doc(db, 'users', storedId));
+                  docRef = doc(db, 'users', storedId);
+                  const docSnap = await getDoc(docRef);
                   if (docSnap.exists()) {
                       userFound = { id: docSnap.id, ...sanitizeData(docSnap.data()) } as User;
                   }
               }
           }
 
-          if (userFound) {
+          if (userFound && docRef) {
+              // LOGIN STREAK LOGIC
+              const now = new Date();
+              const lastLogin = userFound.lastLoginDate ? new Date(userFound.lastLoginDate) : new Date(0);
+              const diffHours = (now.getTime() - lastLogin.getTime()) / (1000 * 60 * 60);
+              
+              let newStreak = userFound.loginStreak || 0;
+              
+              // If different day
+              if (now.getDate() !== lastLogin.getDate() || now.getMonth() !== lastLogin.getMonth()) {
+                  if (diffHours < 48) {
+                      newStreak += 1;
+                  } else {
+                      newStreak = 1; // Reset if missed a day
+                  }
+              }
+
+              updateDoc(docRef, {
+                  lastLoginDate: now.toISOString(),
+                  loginStreak: newStreak
+              });
+              
+              userFound.loginStreak = newStreak; // Update local
               set({ currentUser: userFound });
               if (userFound.currentLocationId) {
                    const loc = MOCK_LOCATIONS.find(l => l.id === userFound.currentLocationId);
@@ -279,12 +284,89 @@ export const useStore = create<Store>((set, get) => ({
       };
 
       authenticate();
+      return () => { unsubQuestions(); unsubUsers(); unsubCoupons(); unsubReports(); };
+  },
+
+  getTasks: () => {
+      const { currentUser } = get();
+      if (!currentUser) return [];
+
+      const now = new Date();
       
-      return () => {
-          unsubQuestions();
-          unsubUsers();
-          unsubReports();
-      };
+      // 1. Monthly Task
+      const lastMonthly = currentUser.lastMonthlyClaim ? new Date(currentUser.lastMonthlyClaim) : new Date(0);
+      const daysSinceMonthly = (now.getTime() - lastMonthly.getTime()) / (1000 * 60 * 60 * 24);
+      const monthlyStatus = daysSinceMonthly >= 30 ? 'READY' : 'COOLDOWN';
+      
+      // 2. Streak Task
+      const streakStatus = currentUser.loginStreak >= 7 ? 'READY' : 'LOCKED';
+      
+      // 3. Share Task
+      const lastShare = currentUser.lastShareDate ? new Date(currentUser.lastShareDate) : new Date(0);
+      const hoursSinceShare = (now.getTime() - lastShare.getTime()) / (1000 * 60 * 60);
+      const shareStatus = hoursSinceShare >= 24 ? 'READY' : 'COOLDOWN';
+
+      return [
+          {
+              id: 'task_monthly',
+              title: 'task.monthly',
+              reward: MONTHLY_REWARD,
+              icon: 'calendar',
+              type: 'MONTHLY',
+              status: monthlyStatus,
+              progress: monthlyStatus === 'COOLDOWN' ? `${30 - Math.floor(daysSinceMonthly)} days left` : undefined
+          },
+          {
+              id: 'task_streak',
+              title: 'task.streak',
+              reward: STREAK_REWARD,
+              icon: 'user',
+              type: 'STREAK',
+              status: streakStatus,
+              progress: `${Math.min(currentUser.loginStreak, 7)}/7 days`
+          },
+          {
+              id: 'task_share',
+              title: 'task.share',
+              reward: SHARE_REWARD,
+              icon: 'share',
+              type: 'SHARE',
+              status: shareStatus
+          }
+      ];
+  },
+
+  checkAndClaimTask: async (type) => {
+      const { currentUser } = get();
+      if (!currentUser || !db) return;
+
+      const userRef = doc(db, 'users', currentUser.id);
+      const now = new Date().toISOString();
+
+      try {
+          if (type === 'MONTHLY') {
+               // Server-side check implies trust in client timestamp or complex cloud function
+               // We trust client logic here for MVP
+               await updateDoc(userRef, {
+                   walletBalance: increment(MONTHLY_REWARD),
+                   lastMonthlyClaim: now
+               });
+          } else if (type === 'STREAK') {
+               if (currentUser.loginStreak < 7) return;
+               await updateDoc(userRef, {
+                   walletBalance: increment(STREAK_REWARD),
+                   loginStreak: 0 // Reset streak after claim? Or keep counting? Usually reset for weekly
+               });
+          } else if (type === 'SHARE') {
+               // Verification simulated by UI delay
+               await updateDoc(userRef, {
+                   walletBalance: increment(SHARE_REWARD),
+                   lastShareDate: now
+               });
+          }
+      } catch (e) {
+          console.error(e);
+      }
   },
 
   subscribeToAnswers: (questionId: string) => {
@@ -304,39 +386,29 @@ export const useStore = create<Store>((set, get) => ({
   setLocation: (location) => {
     set({ selectedLocation: location });
     const { currentUser } = get();
-    if (currentUser && db) {
-        updateDoc(doc(db, 'users', currentUser.id), { currentLocationId: location.id });
-    }
+    if (currentUser && db) updateDoc(doc(db, 'users', currentUser.id), { currentLocationId: location.id });
   },
 
   setLanguage: (lang) => {
     set({ language: lang });
     const { currentUser } = get();
-    if (currentUser && db) {
-         updateDoc(doc(db, 'users', currentUser.id), { language: lang });
-    }
+    if (currentUser && db) updateDoc(doc(db, 'users', currentUser.id), { language: lang });
   },
 
-  saveScrollPosition: (path, position) => {
-    set((state) => ({
-        savedScrollPositions: { ...state.savedScrollPositions, [path]: position }
-    }));
-  },
-  
+  saveScrollPosition: (path, position) => set(state => ({ savedScrollPositions: { ...state.savedScrollPositions, [path]: position } })),
   setUser: (user) => set({ currentUser: user }),
   
   registerUser: async (name, username, avatarUrl, bio = '', websiteUrl = '') => {
     if (!db) return;
     const { language, telegramUser } = get();
-    
-    const cleanUsername = username.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    const cleanUsername = username.trim().toLowerCase();
 
     const newUser = {
         username: cleanUsername,
         displayName: name,
         role: UserRole.USER, 
         reputationScore: 0,
-        walletBalance: 100, 
+        walletBalance: MONTHLY_REWARD, // Start with 3 questions worth
         starsBalance: 0, 
         avatarUrl: avatarUrl,
         bio,
@@ -344,24 +416,22 @@ export const useStore = create<Store>((set, get) => ({
         inventory: [],
         language,
         likedEntityIds: [],
-        telegramId: telegramUser?.id || null
+        telegramId: telegramUser?.id || null,
+        loginStreak: 1,
+        lastLoginDate: new Date().toISOString()
     };
     
     try {
         const docRef = await addDoc(collection(db, 'users'), newUser);
         const userWithId = { ...newUser, id: docRef.id } as unknown as User;
-        
         set({ currentUser: userWithId });
         localStorage.setItem('askq_userid', docRef.id);
-    } catch (e) {
-        console.error("Error registering user:", e);
-    }
+    } catch (e) { console.error(e); }
   },
 
   updateUserProfile: async (updates) => {
       const { currentUser } = get();
-      if (!currentUser || !db) return;
-      await updateDoc(doc(db, 'users', currentUser.id), updates);
+      if (currentUser && db) await updateDoc(doc(db, 'users', currentUser.id), updates);
   },
 
   getUserById: (id) => get().usersMap[id],
@@ -371,37 +441,35 @@ export const useStore = create<Store>((set, get) => ({
     const { currentUser, availableCoupons } = get();
     if (!currentUser || !db) return false;
     const coupon = availableCoupons.find(c => c.id === couponId);
-    if (!coupon) return false;
-    if (currentUser.walletBalance < coupon.cost) return false;
+    if (!coupon || currentUser.walletBalance < coupon.cost) return false;
 
-    updateDoc(doc(db, 'users', currentUser.id), {
-        walletBalance: increment(-coupon.cost),
-        inventory: arrayUnion(coupon.id)
-    });
-    return true;
+    try {
+        runTransaction(db, async (transaction) => {
+            const userRef = doc(db, 'users', currentUser.id);
+            const userDoc = await transaction.get(userRef);
+            if (!userDoc.exists() || userDoc.data().walletBalance < coupon.cost) throw "Error";
+            transaction.update(userRef, {
+                walletBalance: increment(-coupon.cost),
+                inventory: arrayUnion(coupon.id)
+            });
+        });
+        return true;
+    } catch (e) { return false; }
   },
 
   toggleLike: async (entityId, type) => {
       const { currentUser, answers } = get();
       if (!currentUser || !db) return;
-
       const isLiked = currentUser.likedEntityIds.includes(entityId);
       const userRef = doc(db, 'users', currentUser.id);
       
-      // Optimistic update handled by Firestore listener eventually, but local state feedback can be instant if needed
-      
-      if (isLiked) {
-          await updateDoc(userRef, { likedEntityIds: arrayRemove(entityId) });
-      } else {
-          await updateDoc(userRef, { likedEntityIds: arrayUnion(entityId) });
-      }
+      if (isLiked) await updateDoc(userRef, { likedEntityIds: arrayRemove(entityId) });
+      else await updateDoc(userRef, { likedEntityIds: arrayUnion(entityId) });
 
       const incVal = isLiked ? -1 : 1;
-      
       if (type === 'QUESTION') {
           await updateDoc(doc(db, 'questions', entityId), { likes: increment(incVal) });
       } else {
-          // Find answer's parent question
           let questionId = null;
           Object.keys(answers).forEach(qid => {
               if (answers[qid].some(a => a.id === entityId)) questionId = qid;
@@ -415,46 +483,32 @@ export const useStore = create<Store>((set, get) => ({
   sendTip: async (amount, answerId, currency) => {
     const { currentUser, answers } = get();
     if (!currentUser || !db) return false;
-    
     const balanceKey = currency === 'STARS' ? 'starsBalance' : 'walletBalance';
     if (currentUser[balanceKey] < amount) return false;
 
     let questionId = null;
-    Object.keys(answers).forEach(qid => {
-        if (answers[qid].some(a => a.id === answerId)) questionId = qid;
-    });
+    Object.keys(answers).forEach(qid => { if (answers[qid].some(a => a.id === answerId)) questionId = qid; });
     if (!questionId) return false;
 
-    // Atomic decrement
-    await updateDoc(doc(db, 'users', currentUser.id), { [balanceKey]: increment(-amount) });
-    
-    // Atomic increment on answer
-    const receiveKey = currency === 'STARS' ? 'starsReceived' : 'coinsReceived';
-    await updateDoc(doc(db, 'questions', questionId, 'answers', answerId), { [receiveKey]: increment(amount) });
-
-    return true;
+    try {
+         runTransaction(db, async (transaction) => {
+            const userRef = doc(db, 'users', currentUser.id);
+            const ansRef = doc(db, 'questions', questionId, 'answers', answerId);
+            const userDoc = await transaction.get(userRef);
+            if (userDoc.data()![balanceKey] < amount) throw "Low balance";
+            transaction.update(userRef, { [balanceKey]: increment(-amount) });
+            const receiveKey = currency === 'STARS' ? 'starsReceived' : 'coinsReceived';
+            transaction.update(ansRef, { [receiveKey]: increment(amount) });
+         });
+         return true;
+    } catch (e) { return false; }
   },
 
-  claimTaskReward: async (taskId) => {
-     const { currentUser, tasks } = get();
-     if (!currentUser || !db) return;
-     const task = tasks.find(t => t.id === taskId);
-     if (!task || task.isCompleted) return;
-     
-     await updateDoc(doc(db, 'users', currentUser.id), {
-         walletBalance: increment(task.reward)
-     });
-     
-     // Local state update for "Done" status (in real app, this would be stored in user profile too)
-     set(state => ({
-         tasks: state.tasks.map(t => t.id === taskId ? { ...t, isCompleted: true } : t)
-     }));
-  },
+  claimTaskReward: (taskId) => {}, // Deprecated, use checkAndClaimTask
 
   addQuestion: (data) => {
     const { currentUser } = get();
-    if(!currentUser || !db) return false;
-    if (currentUser.walletBalance < QUESTION_COST) return false;
+    if(!currentUser || !db || currentUser.walletBalance < QUESTION_COST) return false;
 
     const newQData = {
         title: data.title,
@@ -464,7 +518,7 @@ export const useStore = create<Store>((set, get) => ({
         text: data.text,
         attachmentUrls: data.attachments,
         isAnonymous: data.isAnonymous,
-        backgroundStyle: data.backgroundStyle || 'white',
+        backgroundStyle: 'white',
         tags: [],
         views: 0,
         likes: 0,
@@ -473,10 +527,7 @@ export const useStore = create<Store>((set, get) => ({
     };
 
     addDoc(collection(db, 'questions'), newQData);
-    updateDoc(doc(db, 'users', currentUser.id), {
-        walletBalance: increment(-QUESTION_COST)
-    });
-
+    updateDoc(doc(db, 'users', currentUser.id), { walletBalance: increment(-QUESTION_COST) });
     set({ questionDraft: { title: '', text: '', categoryId: '', locationId: '', isAnonymous: false, attachments: [] } });
     return true;
   },
@@ -500,42 +551,68 @@ export const useStore = create<Store>((set, get) => ({
       };
 
       await addDoc(collection(db, 'questions', questionId, 'answers'), newAnswerData);
+      
+      // Reward User for answering
+      updateDoc(doc(db, 'users', currentUser.id), {
+          walletBalance: increment(ANSWER_REWARD),
+          reputationScore: increment(1)
+      });
   },
 
-  deleteQuestion: async (questionId) => {
+  markAnswerAsBest: async (questionId, answerId) => {
       if (!db) return;
-      await deleteDoc(doc(db, 'questions', questionId));
+      // Mark question as solved
+      await updateDoc(doc(db, 'questions', questionId), { isSolved: true });
+      // Mark answer as accepted
+      await updateDoc(doc(db, 'questions', questionId, 'answers', answerId), { isAccepted: true });
+      
+      // Optional: Give Bonus to Answer Author? Need to fetch answer to get authorId. 
+      // Simplified: We just mark it for now.
   },
 
-  connectWallet: (address) => {
-      const { currentUser } = get();
-      if (!currentUser || !db) return;
-      updateDoc(doc(db, 'users', currentUser.id), { walletAddress: address });
-  },
-
-  disconnectWallet: () => {
-      const { currentUser } = get();
-      if (!currentUser || !db) return;
-      updateDoc(doc(db, 'users', currentUser.id), { walletAddress: "" });
-  },
-
+  deleteQuestion: async (questionId) => { if (db) await deleteDoc(doc(db, 'questions', questionId)); },
+  connectWallet: (address) => { if (get().currentUser && db) updateDoc(doc(db, 'users', get().currentUser!.id), { walletAddress: address }); },
+  disconnectWallet: () => { if (get().currentUser && db) updateDoc(doc(db, 'users', get().currentUser!.id), { walletAddress: "" }); },
   updateQuestionDraft: (draft) => set({ questionDraft: { ...get().questionDraft, ...draft } }),
   clearQuestionDraft: () => set({ questionDraft: { title: '', text: '', categoryId: '', locationId: '', isAnonymous: false, attachments: [] } }),
 
   submitReport: async (entityId, entityType, reason, description) => {
       const { currentUser } = get();
-      if (!currentUser || !db) return;
-      await addDoc(collection(db, 'reports'), {
-          entityId, entityType, reason, description,
-          reporterId: currentUser.id,
-          status: 'PENDING',
-          createdAt: new Date().toISOString()
-      });
+      if (currentUser && db) await addDoc(collection(db, 'reports'), { entityId, entityType, reason, description, reporterId: currentUser.id, status: 'PENDING', createdAt: new Date().toISOString() });
   },
 
   resolveReport: async (reportId, action) => {
-      // Admin only action - logic in store but enforced by Security Rules in DB
       if (!db) return;
-      await updateDoc(doc(db, 'reports', reportId), { status: 'RESOLVED' });
+      const { reports, answers } = get();
+      const report = reports.find(r => r.id === reportId);
+      if (!report) return;
+
+      const reportRef = doc(db, 'reports', reportId);
+
+      try {
+          if (action === 'DISMISS') {
+               await updateDoc(reportRef, { status: 'DISMISSED' });
+          } else {
+               if (action === 'DELETE') {
+                   if (report.entityType === 'QUESTION') {
+                       await deleteDoc(doc(db, 'questions', report.entityId));
+                   } else if (report.entityType === 'ANSWER') {
+                       // Try to find parent question ID via answers cache
+                       const qId = Object.keys(answers).find(qid => answers[qid].some(a => a.id === report.entityId));
+                       if (qId) {
+                           await deleteDoc(doc(db, 'questions', qId, 'answers', report.entityId));
+                       } else {
+                           // If we can't find it (e.g. answers not loaded), we might fail to delete it easily here.
+                           // Ideally we would query collectionGroup, but for now we rely on cache.
+                           console.warn("Could not find parent question for answer " + report.entityId);
+                       }
+                   }
+               }
+               // Mark report as resolved
+               await updateDoc(reportRef, { status: 'RESOLVED' });
+          }
+      } catch (e) {
+          console.error("Error resolving report:", e);
+      }
   }
 }));

@@ -60,61 +60,67 @@ declare global {
 // 1. User Profile
 export interface User {
   id: string;
-  telegramId?: number; // Link to Telegram account
+  telegramId?: number;
   username: string;
   displayName: string;
   role: UserRole;
-  reputationScore: number; // Points based on helpful answers
-  walletBalance: number; // Virtual currency from likes (internal)
-  starsBalance: number; // Telegram Stars (Real value)
-  walletAddress?: string; // TON Wallet address
+  reputationScore: number;
+  walletBalance: number;
+  starsBalance: number;
+  walletAddress?: string;
   avatarUrl?: string;
-  bio?: string; // User description
-  websiteUrl?: string; // Link to channel or site
-  inventory: string[]; // IDs of purchased coupons
-  currentLocationId?: string; // Persisted user preference
-  language?: Language; // Preferred language
-  likedEntityIds: string[]; // IDs of questions/answers liked by user
+  bio?: string;
+  websiteUrl?: string;
+  inventory: string[];
+  currentLocationId?: string;
+  language?: Language;
+  likedEntityIds: string[];
   isBanned?: boolean;
   banExpiresAt?: string;
+  
+  // Task Tracking
+  lastLoginDate?: string; // ISO Date
+  loginStreak: number;
+  lastMonthlyClaim?: string; // ISO Date
+  lastShareDate?: string; // ISO Date
 }
 
-// 2. Location (The core context of the app)
+// 2. Location
 export interface LocationContext {
   id: string;
   name: string;
   type: LocationType;
-  parentId?: string; // e.g., if City, parent is Country ID
+  parentId?: string;
   flagEmoji?: string;
   backgroundImage?: string;
-  phoneCode?: string; // Country calling code (e.g., "420")
+  phoneCode?: string;
 }
 
 // 3. Category
 export interface Category {
   id: string;
-  name: string; // Translation key suffix
+  name: string;
   icon: string;
 }
 
 // 4. Question
 export interface Question {
   id: string;
-  title: string; // New Title field
+  title: string;
   authorId: string;
-  locationId: string; // The context (e.g., "Paris")
+  locationId: string;
   categoryId: string;
-  text: string; // Description
-  attachmentUrls?: string[]; // Images/Docs
-  backgroundStyle?: string; // Hex color or class name for card background
+  text: string;
+  attachmentUrls?: string[];
+  backgroundStyle?: string;
   isAnonymous: boolean;
-  createdAt: string; // ISO Date string
+  createdAt: string;
   views: number;
-  likes: number; // Total likes
-  tags: string[]; // Keeping tags for backward compatibility or AI keywords
+  likes: number;
+  tags: string[];
   isSolved: boolean;
-  aiGeneratedSummary?: string; // For Gemini integration later
-  bestAnswerSnippet?: string; // Short text of the accepted answer to show in feed
+  aiGeneratedSummary?: string;
+  bestAnswerSnippet?: string;
 }
 
 // 5. Answer
@@ -122,15 +128,15 @@ export interface Answer {
   id: string;
   questionId: string;
   authorId: string;
-  authorName?: string; // Temporary/Denormalized
+  authorName?: string;
   text: string;
   createdAt: string;
   likes: number;
-  starsReceived: number; // Total stars tipped for this answer
-  coinsReceived: number; // Total coins tipped for this answer
-  isAccepted: boolean; // If the question author marked this as helpful
-  attachmentUrls?: string[]; // New: Images in answers
-  replies?: Answer[]; // New: Nested comments
+  starsReceived: number;
+  coinsReceived: number;
+  isAccepted: boolean;
+  attachmentUrls?: string[];
+  replies?: Answer[];
 }
 
 // 6. Marketplace Coupon
@@ -140,19 +146,20 @@ export interface Coupon {
   description: string;
   cost: number;
   imageUrl: string;
-  partnerName: string; // Who provides the coupon
-  promoCode: string; // The code revealed after purchase
-  expiresAt: string; // ISO Date string for expiration
+  partnerName: string;
+  promoCode: string;
+  expiresAt: string;
 }
 
-// 7. Earning Task
+// 7. Earning Task (Static Def)
 export interface Task {
     id: string;
     title: string;
     reward: number;
     icon: string;
-    isCompleted: boolean;
-    type: 'DAILY' | 'ONE_TIME';
+    type: 'MONTHLY' | 'STREAK' | 'SHARE';
+    status: 'LOCKED' | 'READY' | 'DONE' | 'COOLDOWN';
+    progress?: string; // e.g. "Day 3/7"
 }
 
 // 8. Draft for new Question
@@ -168,7 +175,7 @@ export interface QuestionDraft {
 // 9. Moderation Report
 export interface Report {
     id: string;
-    entityId: string; // ID of Question or Answer
+    entityId: string;
     entityType: 'QUESTION' | 'ANSWER';
     reporterId: string;
     reason: string;
@@ -177,13 +184,12 @@ export interface Report {
     createdAt: string;
 }
 
-// App State Structure (used in Store)
 export interface AppState {
   currentUser: User | null;
   selectedLocation: LocationContext | null;
   language: Language;
   isLoading: boolean;
-  questionDraft: QuestionDraft; // Persist form data
+  questionDraft: QuestionDraft;
   reports: Report[];
-  telegramUser: TelegramUser | null; // Data from Telegram SDK
+  telegramUser: TelegramUser | null;
 }
