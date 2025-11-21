@@ -275,6 +275,7 @@ export const translations: Dictionary = {
     'shop.about_partner': 'О партнере',
     'shop.read_more': 'Читать далее',
     'shop.show_less': 'Свернуть',
+    'shop.valid_in': 'Действует в',
 
     // Inventory
     'inv.title': 'Мои покупки',

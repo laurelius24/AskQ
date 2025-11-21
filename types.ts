@@ -92,10 +92,11 @@ export interface LocationContext {
   id: string;
   name: string;
   type: LocationType;
-  parentId?: string;
+  parentId?: string | null; // Changed to allow null explicitly
   flagEmoji?: string;
   backgroundImage?: string;
   phoneCode?: string;
+  isoCode?: string; // Added for Google API filtering (e.g. 'us', 'cz')
 }
 
 // 3. Category
@@ -150,9 +151,10 @@ export interface Coupon {
   cost: number;
   imageUrl: string;
   partnerName: string;
-  partnerLogo?: string; // Made optional or removed based on usage
+  partnerLogo?: string; 
   promoCode: string;
   expiresAt: string;
+  locationId?: string; // ID of the location where valid. Null/Undefined = Global
 }
 
 // 7. Earning Task (Static Def)

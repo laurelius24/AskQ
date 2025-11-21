@@ -1,14 +1,21 @@
 
+
+import { GoogleGenAI } from "@google/genai";
+
 declare global {
   interface Window {
     google: any;
-    initGoogleMaps?: () => void;
+    initGoogleMapsCallback?: () => void;
+    gm_authFailure?: () => void;
   }
 }
 
-const GOOGLE_API_KEY = "YOUR_GOOGLE_API_KEY"; // Вставьте сюда ваш API ключ
+// Key provided by user for Maps JavaScript API
+// Note: This key must have BOTH "Maps JavaScript API" and "Places API" enabled in Google Cloud Console.
+const GOOGLE_API_KEY = "AIzaSyB_rbKpIk83iHDI27ww8pqd_6or-5hljwE";
 
 let isLoaded = false;
+let isError = false;
 let autocompleteService: any = null;
 let placesService: any = null;
 
@@ -18,35 +25,73 @@ export const loadGoogleMapsScript = (): Promise<void> => {
       resolve();
       return;
     }
+    
+    if (isError) {
+      resolve();
+      return;
+    }
 
-    if (window.google && window.google.maps) {
+    if (window.google && window.google.maps && window.google.maps.places) {
       isLoaded = true;
       resolve();
       return;
     }
 
+    // Define the callback function globally
+    window.initGoogleMapsCallback = () => {
+        isLoaded = true;
+        initServices();
+        resolve();
+    };
+
+    // Global handler for API authentication failure
+    window.gm_authFailure = () => {
+        console.warn("Google Maps API Authentication Error (AuthFailure). Falling back to local data.");
+        isError = true;
+        isLoaded = false;
+        resolve();
+    };
+
+    // Check if script already exists
+    if (document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]')) {
+        if (window.google && window.google.maps) {
+            isLoaded = true;
+            resolve();
+        }
+        return;
+    }
+
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_API_KEY}&libraries=places`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_API_KEY}&libraries=places&callback=initGoogleMapsCallback`;
     script.async = true;
     script.defer = true;
-    script.onload = () => {
-      isLoaded = true;
-      resolve();
+    script.onerror = (e) => {
+        console.warn("Google Maps Script Network Error:", e);
+        isError = true;
+        resolve();
     };
-    script.onerror = (e) => reject(e);
     document.head.appendChild(script);
   });
 };
 
 export const initServices = () => {
-  if (!window.google || !window.google.maps || !window.google.maps.places) return;
-  if (!autocompleteService) {
-    autocompleteService = new window.google.maps.places.AutocompleteService();
+  if (isError) return;
+  
+  if (!window.google || !window.google.maps || !window.google.maps.places) {
+      return;
   }
-  // PlacesService requires a DOM node, usually a map or a div. creating a dummy one.
-  if (!placesService) {
-      const dummyDiv = document.createElement('div');
-      placesService = new window.google.maps.places.PlacesService(dummyDiv);
+
+  try {
+      if (!autocompleteService) {
+        autocompleteService = new window.google.maps.places.AutocompleteService();
+      }
+      if (!placesService) {
+          const dummyDiv = document.createElement('div');
+          placesService = new window.google.maps.places.PlacesService(dummyDiv);
+      }
+  } catch (e) {
+      console.warn("Error initializing Google Maps services:", e);
+      isError = true;
   }
 };
 
@@ -59,28 +104,83 @@ export interface GooglePlaceResult {
   };
 }
 
-export const searchCities = (input: string, countryCode?: string): Promise<GooglePlaceResult[]> => {
+// Generic internal search function
+const performSearch = (input: string, options: any): Promise<GooglePlaceResult[]> => {
   return new Promise((resolve) => {
-    if (!input || !autocompleteService) {
+    if (!input || isError) {
       resolve([]);
       return;
     }
 
+    if (isLoaded && !autocompleteService) {
+        initServices();
+    }
+
+    if (!autocompleteService) {
+        resolve([]);
+        return;
+    }
+
+    try {
+        autocompleteService.getPlacePredictions({ input, ...options }, (predictions: any[], status: string) => {
+          if (status !== window.google.maps.places.PlacesServiceStatus.OK || !predictions) {
+            if (status === 'REQUEST_DENIED' || status === 'OVER_QUERY_LIMIT' || status === 'UNKNOWN_ERROR') {
+                console.warn(`Google Maps API Error: ${status}. Switching session to local database only.`);
+                isError = true;
+            }
+            resolve([]);
+          } else {
+            resolve(predictions);
+          }
+        });
+    } catch (e) {
+        console.warn("Google Maps Search Exception:", e);
+        resolve([]);
+    }
+  });
+};
+
+export const searchCities = (input: string, countryCode?: string): Promise<GooglePlaceResult[]> => {
     const request: any = {
-      input,
       types: ['(cities)'],
     };
-
     if (countryCode) {
       request.componentRestrictions = { country: countryCode };
     }
+    return performSearch(input, request);
+};
 
-    autocompleteService.getPlacePredictions(request, (predictions: any[], status: string) => {
-      if (status !== window.google.maps.places.PlacesServiceStatus.OK || !predictions) {
-        resolve([]);
-      } else {
-        resolve(predictions);
-      }
+export const searchCountries = (input: string): Promise<GooglePlaceResult[]> => {
+    return performSearch(input, {
+        types: ['country'] // STRICTLY countries only.
     });
-  });
+};
+
+// NEW: Helper to get ISO code from a Place ID (needed for strict city filtering)
+export const getCountryCode = (placeId: string): Promise<string | null> => {
+    return new Promise((resolve) => {
+        if (!placesService) {
+            initServices();
+            if (!placesService) {
+                resolve(null);
+                return;
+            }
+        }
+
+        const request = {
+            placeId: placeId,
+            fields: ['address_components']
+        };
+
+        placesService.getDetails(request, (place: any, status: string) => {
+            if (status === window.google.maps.places.PlacesServiceStatus.OK && place && place.address_components) {
+                const countryComponent = place.address_components.find((c: any) => c.types.includes('country'));
+                if (countryComponent) {
+                    resolve(countryComponent.short_name); // e.g. "US", "CZ"
+                    return;
+                }
+            }
+            resolve(null);
+        });
+    });
 };

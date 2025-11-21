@@ -4,7 +4,7 @@ import { getFirestore } from "firebase/firestore";
 
 // Configuration provided by user
 const firebaseConfig = {
-  apiKey: "AIzaSyCqObnat15TG88RcumaH6PdhHGWK-cC2FE",
+  apiKey: "AIzaSyDGpol9vGQFl43ciG-u_7W0Y06mFmZYAVA",
   authDomain: "askq-96d18.firebaseapp.com",
   projectId: "askq-96d18",
   storageBucket: "askq-96d18.firebasestorage.app",

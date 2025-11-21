@@ -1,11 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
 import { Search, ChevronRight, ArrowLeft, Globe, MapPin, X, Loader2 } from 'lucide-react';
 import { LocationType, LocationContext } from '../types';
 import { translations } from '../translations';
-import { loadGoogleMapsScript, initServices, searchCities, GooglePlaceResult } from '../services/googlePlaces';
+import { loadGoogleMapsScript, searchCities, searchCountries, getCountryCode, GooglePlaceResult } from '../services/googlePlaces';
 
 export const LocationSelect: React.FC = () => {
   const { availableLocations, setLocation, language, selectedLocation } = useStore();
@@ -17,25 +18,21 @@ export const LocationSelect: React.FC = () => {
   const [selectedCountry, setSelectedCountry] = useState<LocationContext | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestedCountry, setSuggestedCountry] = useState<LocationContext | null>(null);
+  const [combinedResults, setCombinedResults] = useState<any[]>([]);
   
-  // Google Maps Logic
-  const [isGoogleReady, setIsGoogleReady] = useState(false);
-  const [googleResults, setGoogleResults] = useState<GooglePlaceResult[]>([]);
+  // Google Search State
+  const [isGoogleLoaded, setIsGoogleLoaded] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
 
-  // Load Google Maps on mount
-  useEffect(() => {
-      loadGoogleMapsScript()
-        .then(() => {
-            initServices();
-            setIsGoogleReady(true);
-        })
-        .catch(e => console.error("Google Maps Error", e));
-  }, []);
-
-  // Simulate phone number detection
+  // Simulate phone number detection (Czechia default)
   const mockUserPhoneCode = '420'; 
 
+  // 1. Load Google Maps Script on Mount
+  useEffect(() => {
+      loadGoogleMapsScript().then(() => setIsGoogleLoaded(true));
+  }, []);
+
+  // 2. Suggest Country
   useEffect(() => {
       if (step === 'COUNTRY' && !searchQuery) {
           const found = availableLocations.find(l => l.type === LocationType.COUNTRY && l.phoneCode === mockUserPhoneCode);
@@ -43,55 +40,154 @@ export const LocationSelect: React.FC = () => {
       }
   }, [availableLocations, step, searchQuery]);
 
-  // Search Effect for Google Places
+  // 3. Robust Search Effect (Local + Google Parallel)
   useEffect(() => {
-      if (step === 'CITY' && searchQuery.length > 1 && isGoogleReady && selectedCountry) {
+      if (searchQuery.length > 1) {
           setIsSearching(true);
-          // Use the selected country ID (which is ISO code like 'cz', 'fr', 'us') for strict filtering
-          const countryCode = selectedCountry.id; 
           
-          const timer = setTimeout(async () => {
-              const results = await searchCities(searchQuery, countryCode);
-              setGoogleResults(results);
-              setIsSearching(false);
-          }, 500); // Debounce
+          const runSearch = async () => {
+              // A. Define Local Matches based on Step
+              let localMatches: LocationContext[] = [];
+              
+              if (step === 'COUNTRY') {
+                  localMatches = availableLocations.filter(l => 
+                      l.type === LocationType.COUNTRY && 
+                      l.name.toLowerCase().includes(searchQuery.toLowerCase())
+                  );
+              } else if (step === 'CITY' && selectedCountry) {
+                  localMatches = availableLocations.filter(l => 
+                      l.type === LocationType.CITY && 
+                      l.parentId === selectedCountry.id && 
+                      l.name.toLowerCase().includes(searchQuery.toLowerCase())
+                  );
+              }
 
+              // Format Local Results
+              const localFormatted = localMatches.map(l => ({
+                  id: l.id, // Keep existing ID
+                  place_id: l.id, // Fallback
+                  description: l.name,
+                  structured_formatting: {
+                      main_text: l.name,
+                      secondary_text: step === 'COUNTRY' ? 'Country' : selectedCountry?.name
+                  },
+                  originalObj: l // Keep ref to full object for flags etc
+              }));
+
+              // SHOW LOCAL RESULTS IMMEDIATELY
+              setCombinedResults(localFormatted);
+
+              // B. Google Search (Async with Timeout)
+              if (isGoogleLoaded) {
+                  try {
+                      const timeoutPromise = new Promise<GooglePlaceResult[]>((resolve) => 
+                          setTimeout(() => resolve([]), 1000)
+                      );
+                      
+                      let googlePromise;
+                      if (step === 'COUNTRY') {
+                          googlePromise = searchCountries(searchQuery);
+                      } else if (step === 'CITY' && selectedCountry) {
+                          // Use country ISO code (e.g. 'cz', 'de') as component restriction.
+                          // If it's a Google country, we stored the isoCode in handleCountrySelect.
+                          // If it's a local country, the ID is usually the code.
+                          const code = selectedCountry.isoCode || (selectedCountry.id.length === 2 ? selectedCountry.id : undefined);
+                          googlePromise = searchCities(searchQuery, code);
+                      } else {
+                          googlePromise = Promise.resolve([]);
+                      }
+                      
+                      // Race against timeout
+                      const googleRes = await Promise.race([googlePromise, timeoutPromise]);
+
+                      if (googleRes && googleRes.length > 0) {
+                          setCombinedResults(prev => {
+                              const merged = [...prev];
+                              googleRes.forEach(g => {
+                                  // Avoid duplicates based on main text
+                                  if (!merged.some(existing => existing.structured_formatting.main_text === g.structured_formatting.main_text)) {
+                                      merged.push(g);
+                                  }
+                              });
+                              return merged;
+                          });
+                      }
+                  } catch (e) {
+                      console.warn("Google Search failed or timed out", e);
+                  }
+              }
+              
+              setIsSearching(false);
+          };
+
+          const timer = setTimeout(runSearch, 400); // Debounce
           return () => clearTimeout(timer);
       } else {
-          setGoogleResults([]);
+          setCombinedResults([]);
+          setIsSearching(false);
       }
-  }, [searchQuery, step, isGoogleReady, selectedCountry]);
+  }, [searchQuery, step, isGoogleLoaded, selectedCountry, availableLocations]);
 
-  // Filter logic for Countries (Static)
-  const countries = availableLocations.filter(l => l.type === LocationType.COUNTRY);
-  const filteredCountries = countries.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
   // Handlers
-  const handleCountrySelect = (country: LocationContext) => {
-    setSelectedCountry(country);
+  const handleCountrySelect = async (item: any) => {
+    setIsSearching(true);
+    let countryCtx: LocationContext;
+
+    if (item.originalObj) {
+        // Local DB Country - usually id IS the code
+        countryCtx = { ...item.originalObj, isoCode: item.originalObj.id };
+    } else {
+        // Google Result Country - Need to fetch ISO Code for future city searches
+        const placeId = item.place_id;
+        const fetchedIsoCode = await getCountryCode(placeId);
+        
+        countryCtx = {
+            id: `gl_${placeId}`,
+            name: item.structured_formatting.main_text,
+            type: LocationType.COUNTRY,
+            flagEmoji: '🌐', // Default for new Google countries
+            parentId: null, // STRICT: Countries have NULL parent
+            isoCode: fetchedIsoCode || undefined // Save the ISO code
+        };
+        // We don't need to save to DB yet, wait until city is selected or "All Country"
+    }
+
+    setSelectedCountry(countryCtx);
     setSearchQuery('');
-    setGoogleResults([]);
     setStep('CITY');
+    setCombinedResults([]);
+    setIsSearching(false);
   };
 
-  const handleCitySelect = (location: LocationContext) => {
-    setLocation(location);
+  const handleCitySelect = async (location: any) => {
+    if (!selectedCountry) return;
+
+    // Check if it's a Google Result (needs converting) or Local
+    let finalLoc: LocationContext;
+
+    if (location.originalObj) {
+        finalLoc = location.originalObj;
+    } else if (location.place_id) {
+        // Google Result
+        finalLoc = {
+            id: `gl_${location.place_id}`,
+            name: location.structured_formatting.main_text,
+            type: LocationType.CITY,
+            parentId: selectedCountry.id // STRICT: Link to parent Country
+        };
+    } else {
+        return;
+    }
+
+    // Ensure the country is saved first if it's new
+    if (selectedCountry.id.startsWith('gl_')) {
+        await setLocation(selectedCountry);
+    }
+
+    // This saves the city to Firestore 'locations' collection
+    await setLocation(finalLoc); 
     navigate('/');
-  };
-
-  const handleGoogleCitySelect = (place: GooglePlaceResult) => {
-      if (!selectedCountry) return;
-      
-      // Create a LocationContext from Google Place result
-      const newLocation: LocationContext = {
-          id: place.place_id, // Use Google Place ID as unique ID
-          name: place.structured_formatting.main_text, // e.g. "Prague"
-          type: LocationType.CITY,
-          parentId: selectedCountry.id,
-          flagEmoji: '', // Cities don't strictly need flags
-      };
-      
-      handleCitySelect(newLocation);
   };
 
   const handleBack = () => {
@@ -99,23 +195,24 @@ export const LocationSelect: React.FC = () => {
       setStep('COUNTRY');
       setSelectedCountry(null);
       setSearchQuery('');
-      setGoogleResults([]);
+      setCombinedResults([]);
     } else if (selectedLocation) {
         navigate(-1);
     }
   };
 
-  const renderCountryItem = (item: LocationContext) => (
+  const renderResultItem = (item: any, isCity: boolean) => (
     <button
-        key={item.id}
-        onClick={() => handleCountrySelect(item)}
+        key={item.place_id || item.id}
+        onClick={() => isCity ? handleCitySelect(item) : handleCountrySelect(item)}
         className="w-full flex items-center gap-4 p-4 rounded-2xl border border-white/5 shadow-sm hover:border-primary/50 active:scale-[0.98] transition-all bg-card mb-2"
       >
         <div className="w-10 h-10 rounded-full bg-input flex items-center justify-center text-2xl">
-            {item.flagEmoji}
+            {isCity ? <MapPin size={24} className="text-primary" /> : (item.originalObj?.flagEmoji || <Globe size={24} className="text-secondary" />)}
         </div>
         <div className="text-left flex-1">
-            <div className="font-bold text-white">{item.name}</div>
+            <div className="font-bold text-white">{item.structured_formatting.main_text}</div>
+            {!item.originalObj && <span className="text-[10px] text-secondary">Google Search</span>}
         </div>
         <ChevronRight className="text-secondary" size={20} />
       </button>
@@ -150,8 +247,13 @@ export const LocationSelect: React.FC = () => {
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={step === 'COUNTRY' ? t['loc.search_country'] : t['loc.search_city']}
                 className="w-full bg-input text-white rounded-2xl py-3 pl-10 pr-4 outline-none border border-transparent focus:border-primary"
+                autoFocus={false} 
             />
-            {isSearching && <div className="absolute right-3 top-3.5"><Loader2 size={16} className="animate-spin text-primary"/></div>}
+            {isSearching && (
+                <div className="absolute right-3 top-3">
+                    <Loader2 size={20} className="animate-spin text-primary" />
+                </div>
+            )}
         </div>
       </div>
 
@@ -161,32 +263,54 @@ export const LocationSelect: React.FC = () => {
         {/* === COUNTRY STEP === */}
         {step === 'COUNTRY' && (
             <>
+                {/* 1. Suggestion (Only if no search) */}
                 {!searchQuery && suggestedCountry && (
                     <>
                         <h3 className="text-xs font-bold text-primary uppercase tracking-wider mb-2 mt-2">
                             {t['loc.suggested']}
                         </h3>
-                        {renderCountryItem(suggestedCountry)}
+                        <button
+                            onClick={() => handleCountrySelect({ originalObj: suggestedCountry, structured_formatting: { main_text: suggestedCountry.name } })}
+                            className="w-full flex items-center gap-4 p-4 rounded-2xl border border-white/5 shadow-sm hover:border-primary/50 active:scale-[0.98] transition-all bg-card mb-2"
+                        >
+                            <div className="w-10 h-10 rounded-full bg-input flex items-center justify-center text-2xl">
+                                {suggestedCountry.flagEmoji}
+                            </div>
+                            <div className="text-left flex-1">
+                                <div className="font-bold text-white">{suggestedCountry.name}</div>
+                            </div>
+                            <ChevronRight className="text-secondary" size={20} />
+                        </button>
                     </>
                 )}
                 
-                {searchQuery && (
+                {/* 2. Results (Local + Google) */}
+                {searchQuery ? (
                     <>
-                        <h3 className="text-xs font-bold text-secondary uppercase tracking-wider mb-2">
+                        <h3 className="text-xs font-bold text-secondary uppercase tracking-wider mb-2 mt-4">
                             {t['loc.countries']}
                         </h3>
-                        {filteredCountries.map((item) => renderCountryItem(item))}
+                        {combinedResults.length > 0 ? (
+                            combinedResults.map((item) => renderResultItem(item, false))
+                        ) : (
+                            !isSearching && <div className="text-center text-secondary py-10">{t['loc.not_found']}</div>
+                        )}
                     </>
-                )}
+                ) : null}
             </>
         )}
 
-        {/* === CITY STEP (Google Maps) === */}
+        {/* === CITY STEP === */}
         {step === 'CITY' && selectedCountry && (
             <>
+                {/* Static "All Country" Option (Only if no search) */}
                 {!searchQuery && (
                      <button
-                        onClick={() => handleCitySelect(selectedCountry)}
+                        onClick={() => {
+                            // Save country if new
+                            if (selectedCountry.id.startsWith('gl_')) setLocation(selectedCountry);
+                            setLocation(selectedCountry).then(() => navigate('/'));
+                        }}
                         className="w-full flex items-center gap-4 p-4 rounded-2xl border border-primary/30 bg-primary/10 hover:bg-primary/20 transition-all mb-4"
                     >
                         <div className="w-10 h-10 rounded-full bg-card flex items-center justify-center text-xl shadow-sm">
@@ -200,33 +324,43 @@ export const LocationSelect: React.FC = () => {
                     </button>
                 )}
 
-                {googleResults.map((place) => (
-                    <button
-                        key={place.place_id}
-                        onClick={() => handleGoogleCitySelect(place)}
-                        className="w-full flex items-center gap-4 p-4 rounded-2xl border border-white/5 shadow-sm hover:border-primary/50 active:scale-[0.98] transition-all bg-card mb-2"
-                    >
-                        <div className="w-10 h-10 rounded-full bg-input flex items-center justify-center text-2xl">
-                            <MapPin size={24} className="text-primary" />
-                        </div>
-                        <div className="text-left flex-1">
-                            <div className="font-bold text-white">{place.structured_formatting.main_text}</div>
-                            <div className="text-xs text-secondary">{place.structured_formatting.secondary_text}</div>
-                        </div>
-                        <ChevronRight className="text-secondary" size={20} />
-                    </button>
-                ))}
-
-                {searchQuery && !isSearching && googleResults.length === 0 && (
-                    <div className="text-center text-secondary py-10">
-                        {t['loc.not_found']}
-                    </div>
+                {/* Default Popular Cities (If no search) */}
+                {!searchQuery && (
+                    <>
+                        <h3 className="text-xs font-bold text-secondary uppercase tracking-wider mb-2">Popular Cities</h3>
+                        {availableLocations
+                            .filter(l => l.type === LocationType.CITY && l.parentId === selectedCountry.id)
+                            .map(city => (
+                                <button
+                                    key={city.id}
+                                    onClick={() => { setLocation(city); navigate('/'); }}
+                                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-white/5 shadow-sm hover:border-primary/50 active:scale-[0.98] transition-all bg-card mb-2"
+                                >
+                                    <div className="w-10 h-10 rounded-full bg-input flex items-center justify-center text-2xl">
+                                        <MapPin size={24} className="text-primary" />
+                                    </div>
+                                    <div className="text-left flex-1">
+                                        <div className="font-bold text-white">{city.name}</div>
+                                    </div>
+                                    <ChevronRight className="text-secondary" size={20} />
+                                </button>
+                            ))
+                        }
+                    </>
                 )}
-                
-                {searchQuery && !isGoogleReady && (
-                    <div className="text-center text-danger text-xs py-4">
-                        Google Maps not loaded. Check API Key.
-                    </div>
+
+                {/* Search Results (Local + Google) */}
+                {searchQuery && (
+                    <>
+                        <h3 className="text-xs font-bold text-secondary uppercase tracking-wider mb-2">
+                            Search Results
+                        </h3>
+                        {combinedResults.map((item) => renderResultItem(item, true))}
+                        
+                        {combinedResults.length === 0 && !isSearching && (
+                            <div className="text-center text-secondary py-10">{t['loc.not_found']}</div>
+                        )}
+                    </>
                 )}
             </>
         )}

@@ -3,15 +3,15 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
-import { Zap, Sparkles, MessageCircle, CheckCircle2 } from 'lucide-react';
+import { Zap, Sparkles, MessageCircle, CheckCircle2, MapPin, Globe } from 'lucide-react';
 import { translations } from '../translations';
-import { Coupon } from '../types';
+import { Coupon, LocationType } from '../types';
 import { PageHeader } from '../components/PageHeader';
 import { CouponModal } from '../components/CouponModal';
 
 export const Shop: React.FC = () => {
   const navigate = useNavigate();
-  const { currentUser, availableCoupons, buyCoupon, language } = useStore();
+  const { currentUser, availableCoupons, buyCoupon, language, selectedLocation, availableLocations } = useStore();
   const t = translations[language];
   
   const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null);
@@ -26,6 +26,23 @@ export const Shop: React.FC = () => {
   };
 
   if (!currentUser) return null;
+
+  // Filter Logic:
+  // 1. Coupon has no locationId (Global) -> SHOW
+  // 2. Coupon locationId matches current location ID (Exact Match) -> SHOW
+  // 3. Coupon locationId matches current location's Parent ID (e.g. Coupon for Czechia, User in Prague) -> SHOW
+  const filteredCoupons = availableCoupons.filter(c => {
+      if (!c.locationId) return true; // Global
+      if (c.locationId === selectedLocation?.id) return true; // Exact Match
+      if (selectedLocation?.type === LocationType.CITY && c.locationId === selectedLocation.parentId) return true; // Parent Match
+      return false;
+  });
+
+  const getLocationName = (locId?: string) => {
+      if (!locId) return t['search.scope_global'];
+      const loc = availableLocations.find(l => l.id === locId);
+      return loc ? loc.name : 'Unknown';
+  };
 
   return (
     <div className="pb-24 min-h-screen bg-bg page-transition">
@@ -59,46 +76,59 @@ export const Shop: React.FC = () => {
         <h3 className="font-bold text-white mb-4">{t['shop.avail_coupons']}</h3>
         
         <div className="space-y-4">
-            {availableCoupons.map(coupon => {
-                const isPurchased = currentUser.inventory.includes(coupon.id);
-                
-                return (
-                    <div 
-                        key={coupon.id} 
-                        onClick={() => setSelectedCoupon(coupon)}
-                        className="bg-card rounded-2xl border border-white/5 p-3 flex gap-4 items-center shadow-sm active:scale-[0.99] transition-all cursor-pointer hover:border-white/10"
-                    >
-                        <div className="w-20 h-20 shrink-0 rounded-xl overflow-hidden relative bg-input">
-                            <img src={coupon.imageUrl} alt="thumb" className="w-full h-full object-cover" />
-                            {isPurchased && (
-                                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                                    <CheckCircle2 className="text-success" size={24} />
+            {filteredCoupons.length === 0 ? (
+                <div className="text-center py-10 text-secondary text-sm opacity-60">
+                    No offers in this area yet.
+                </div>
+            ) : (
+                filteredCoupons.map(coupon => {
+                    const isPurchased = currentUser.inventory.includes(coupon.id);
+                    const locName = getLocationName(coupon.locationId);
+                    
+                    return (
+                        <div 
+                            key={coupon.id} 
+                            onClick={() => setSelectedCoupon(coupon)}
+                            className="bg-card rounded-2xl border border-white/5 p-3 flex gap-4 items-center shadow-sm active:scale-[0.99] transition-all cursor-pointer hover:border-white/10 relative overflow-hidden"
+                        >
+                            <div className="w-20 h-20 shrink-0 rounded-xl overflow-hidden relative bg-input">
+                                <img src={coupon.imageUrl} alt="thumb" className="w-full h-full object-cover" />
+                                {isPurchased && (
+                                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                                        <CheckCircle2 className="text-success" size={24} />
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-0.5">
+                                    <div className="text-xs font-bold text-primary uppercase tracking-wider">{coupon.partnerName}</div>
+                                    <div className="flex items-center gap-0.5 text-[10px] text-secondary bg-white/5 px-1.5 rounded">
+                                        {coupon.locationId ? <MapPin size={10} /> : <Globe size={10} />}
+                                        <span className="truncate max-w-[80px]">{locName}</span>
+                                    </div>
                                 </div>
-                            )}
-                        </div>
-                        
-                        <div className="flex-1 min-w-0">
-                            <div className="text-xs font-bold text-primary uppercase tracking-wider mb-0.5">{coupon.partnerName}</div>
-                            <h4 className="font-bold text-white text-base leading-tight mb-1 truncate">{coupon.title}</h4>
-                            <p className="text-xs text-secondary truncate">{coupon.description}</p>
-                        </div>
+                                <h4 className="font-bold text-white text-base leading-tight mb-1 truncate">{coupon.title}</h4>
+                                <p className="text-xs text-secondary truncate">{coupon.description}</p>
+                            </div>
 
-                        {/* Price Badge */}
-                        <div className="flex flex-col items-end gap-1 pl-2 border-l border-white/5">
-                             {isPurchased ? (
-                                 <span className="text-[10px] font-bold text-success bg-success/10 px-2 py-1 rounded-lg whitespace-nowrap">
-                                     {t['shop.owned']}
-                                 </span>
-                             ) : (
-                                <div className="flex items-center gap-1 text-white font-bold">
-                                    <span>{coupon.cost}</span>
-                                    <Zap size={14} className="text-primary fill-primary" />
-                                </div>
-                             )}
+                            {/* Price Badge */}
+                            <div className="flex flex-col items-end gap-1 pl-2 border-l border-white/5">
+                                {isPurchased ? (
+                                    <span className="text-[10px] font-bold text-success bg-success/10 px-2 py-1 rounded-lg whitespace-nowrap">
+                                        {t['shop.owned']}
+                                    </span>
+                                ) : (
+                                    <div className="flex items-center gap-1 text-white font-bold">
+                                        <span>{coupon.cost}</span>
+                                        <Zap size={14} className="text-primary fill-primary" />
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                    </div>
-                );
-            })}
+                    );
+                })
+            )}
         </div>
 
         {/* Contact Us Footer */}

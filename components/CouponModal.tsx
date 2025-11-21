@@ -1,7 +1,7 @@
 
 
 import React, { useState } from 'react';
-import { ChevronLeft, Clock, ChevronRight, Copy } from 'lucide-react';
+import { ChevronLeft, Clock, ChevronRight, Copy, MapPin, Globe } from 'lucide-react';
 import { Coupon } from '../types';
 import { translations } from '../translations';
 import { useStore } from '../store';
@@ -25,7 +25,7 @@ export const CouponModal: React.FC<CouponModalProps> = ({
   actionDisabled = false,
   priceDisplay
 }) => {
-  const { language } = useStore();
+  const { language, availableLocations } = useStore();
   const t = translations[language];
   const [isRevealed, setIsRevealed] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -40,6 +40,12 @@ export const CouponModal: React.FC<CouponModalProps> = ({
   const copyCode = (code: string) => {
       navigator.clipboard.writeText(code);
       alert(t['prof.copy']);
+  };
+
+  const getLocationName = (locId?: string) => {
+      if (!locId) return t['search.scope_global'];
+      const loc = availableLocations.find(l => l.id === locId);
+      return loc ? loc.name : 'Unknown';
   };
 
   return (
@@ -71,10 +77,17 @@ export const CouponModal: React.FC<CouponModalProps> = ({
 
                   {/* Title & Expiry */}
                   <div className="mb-6">
-                      <h2 className="font-bold text-white text-2xl mb-2 leading-tight">{coupon.title}</h2>
-                      <div className="flex items-center gap-2 text-secondary text-sm bg-white/5 w-fit px-3 py-1.5 rounded-lg">
-                           <Clock size={14} />
-                           <span>{t['shop.expires']} {formatDate(coupon.expiresAt)}</span>
+                      <h2 className="font-bold text-white text-2xl mb-3 leading-tight">{coupon.title}</h2>
+                      
+                      <div className="flex flex-wrap gap-2">
+                          <div className="flex items-center gap-2 text-secondary text-sm bg-white/5 w-fit px-3 py-1.5 rounded-lg">
+                               <Clock size={14} />
+                               <span>{t['shop.expires']} {formatDate(coupon.expiresAt)}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-secondary text-sm bg-white/5 w-fit px-3 py-1.5 rounded-lg">
+                               {coupon.locationId ? <MapPin size={14} /> : <Globe size={14} />}
+                               <span>{t['shop.valid_in']}: {getLocationName(coupon.locationId)}</span>
+                          </div>
                       </div>
                   </div>
 
