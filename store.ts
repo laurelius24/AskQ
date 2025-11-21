@@ -99,77 +99,6 @@ const MOCK_LOCATIONS: LocationContext[] = [
     return a.name.localeCompare(b.name);
 });
 
-// Initial Data for Seeding (If DB is empty)
-const INITIAL_COUPONS = [
-    {
-        id: 'c1',
-        title: '10% OFF Everything',
-        partnerName: 'Alza.cz',
-        description: 'Get 10% discount on all electronics. Minimum purchase 1000 CZK. Valid for online orders only.',
-        cost: 500,
-        imageUrl: 'https://cdn.alza.cz/Foto/ImgGalery/Image/alza_logo_2020.png',
-        promoCode: 'ALZA10ASKQ',
-        expiresAt: '2025-12-31'
-    },
-    {
-        id: 'c2',
-        title: 'Free Delivery',
-        partnerName: 'Wolt',
-        description: 'Free delivery for your next 3 orders. Valid for new and existing customers in Prague and Brno.',
-        cost: 300,
-        imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c5/Wolt_Logo_RGB.png',
-        promoCode: 'WOLTFREE24',
-        expiresAt: '2025-06-30'
-    },
-    {
-        id: 'c3',
-        title: '200 CZK Voucher',
-        partnerName: 'Rohlik.cz',
-        description: 'Discount on your first grocery order over 1000 CZK.',
-        cost: 400,
-        imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/f/f7/Rohlik_logo.png',
-        promoCode: 'ROHLIK200',
-        expiresAt: '2025-12-31'
-    },
-    {
-        id: 'c4',
-        title: '30% OFF Rides',
-        partnerName: 'Uber',
-        description: 'Get 30% off your next 5 rides in Prague. Max discount 100 CZK per ride.',
-        cost: 600,
-        imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/cc/Uber_logo_2018.png',
-        promoCode: 'UBERASK30',
-        expiresAt: '2025-09-01'
-    }
-];
-
-const INITIAL_TASKS = [
-    {
-        id: 'task_monthly',
-        title: 'task.monthly',
-        reward: MONTHLY_REWARD,
-        icon: 'calendar',
-        type: 'MONTHLY',
-        status: 'READY'
-    },
-    {
-        id: 'task_streak',
-        title: 'task.streak',
-        reward: STREAK_REWARD,
-        icon: 'user',
-        type: 'STREAK',
-        status: 'LOCKED'
-    },
-    {
-        id: 'task_share',
-        title: 'task.share',
-        reward: SHARE_REWARD,
-        icon: 'share',
-        type: 'SHARE',
-        status: 'READY'
-    }
-];
-
 const sanitizeData = (data: any): any => {
   if (!data) return data;
   if (typeof data !== 'object') return data;
@@ -220,7 +149,7 @@ interface Store extends AppState {
   // Task Actions
   checkAndClaimTask: (type: 'MONTHLY' | 'STREAK' | 'SHARE') => Promise<void>;
   
-  addQuestion: (data: { title: string, text: string, categoryId: string, locationId: string, isAnonymous: boolean, attachments: string[], backgroundStyle?: string }) => boolean;
+  addQuestion: (data: { title: string, text: string, categoryId: string, locationId: string, isAnonymous: boolean, attachments: string[], backgroundStyle?: string }) => Promise<boolean>;
   addAnswer: (questionId: string, text: string, attachmentUrls: string[]) => Promise<void>;
   addReply: (questionId: string, parentAnswerId: string, text: string, attachments?: string[]) => Promise<void>;
   markAnswerAsBest: (questionId: string, answerId: string) => Promise<void>;
@@ -237,6 +166,8 @@ interface Store extends AppState {
 
   submitReport: (entityId: string, entityType: 'QUESTION' | 'ANSWER', reason: string, description: string) => Promise<void>;
   resolveReport: (reportId: string, action: 'DISMISS' | 'DELETE' | 'BAN_24H' | 'BAN_FOREVER') => Promise<void>;
+  
+  seedDatabase: () => Promise<void>;
 }
 
 export const useStore = create<Store>((set, get) => ({
@@ -272,37 +203,6 @@ export const useStore = create<Store>((set, get) => ({
           set({ isLoading: false });
           return;
       }
-
-      // --- SEED DATABASE IF EMPTY ---
-      const seedDatabase = async () => {
-          try {
-              const couponsSnap = await getDocs(collection(db, 'coupons'));
-              if (couponsSnap.empty) {
-                  console.log("Seeding Coupons...");
-                  const batch = writeBatch(db);
-                  INITIAL_COUPONS.forEach(c => {
-                      const docRef = doc(collection(db, 'coupons'));
-                      batch.set(docRef, c);
-                  });
-                  await batch.commit();
-              }
-
-              const tasksSnap = await getDocs(collection(db, 'tasks'));
-              if (tasksSnap.empty) {
-                  console.log("Seeding Tasks...");
-                  const batch = writeBatch(db);
-                  INITIAL_TASKS.forEach(t => {
-                      const docRef = doc(collection(db, 'tasks'));
-                      batch.set(docRef, t);
-                  });
-                  await batch.commit();
-              }
-          } catch (e) {
-              console.error("Error seeding DB:", e);
-          }
-      };
-      seedDatabase();
-      // ------------------------------
 
       // Questions Listener
       const qQuery = query(collection(db, 'questions'), orderBy('createdAt', 'desc'));
@@ -390,11 +290,19 @@ export const useStore = create<Store>((set, get) => ({
               userFound.loginStreak = newStreak; // Update local
               set({ currentUser: userFound });
               
-              // Set location from user profile if exists
+              // Set location from user profile if exists, otherwise Default to Prague if user has no location yet
               if (userFound.currentLocationId) {
                    const loc = MOCK_LOCATIONS.find(l => l.id === userFound.currentLocationId);
                    if (loc) set({ selectedLocation: loc });
+              } else {
+                   // Default to Prague if fresh user
+                   const defaultLoc = MOCK_LOCATIONS.find(l => l.id === 'cz_prg') || MOCK_LOCATIONS[0];
+                   set({ selectedLocation: defaultLoc });
+                   updateDoc(docRef, { currentLocationId: defaultLoc.id });
               }
+          } else {
+              // Seed if needed on first load without auth
+              get().seedDatabase();
           }
 
           set({ isLoading: false });
@@ -532,9 +440,11 @@ export const useStore = create<Store>((set, get) => ({
         inventory: [],
         language,
         likedEntityIds: [],
-        telegramId: telegramUser?.id || null, // Important for auto-login
+        telegramId: telegramUser?.id || null,
         loginStreak: 1,
-        lastLoginDate: new Date().toISOString()
+        lastLoginDate: new Date().toISOString(),
+        questionsThisMonth: 0,
+        lastQuestionMonth: `${new Date().getFullYear()}-${new Date().getMonth() + 1}`
     };
     
     try {
@@ -620,9 +530,26 @@ export const useStore = create<Store>((set, get) => ({
     } catch (e) { return false; }
   },
 
-  addQuestion: (data) => {
+  addQuestion: async (data) => {
     const { currentUser } = get();
-    if(!currentUser || !db || currentUser.walletBalance < QUESTION_COST) return false;
+    if(!currentUser || !db) return false;
+
+    // Check monthly limit & Balance
+    const now = new Date();
+    const currentMonthStr = `${now.getFullYear()}-${now.getMonth() + 1}`;
+    let questionsThisMonth = currentUser.questionsThisMonth || 0;
+    let cost = 0;
+
+    // If user is in new month, reset usage (logic handled implicitly by just checking date)
+    if (currentUser.lastQuestionMonth !== currentMonthStr) {
+        questionsThisMonth = 0;
+    }
+
+    // First 3 questions free per month
+    if (questionsThisMonth >= 3) {
+        cost = QUESTION_COST;
+        if (currentUser.walletBalance < cost) return false;
+    }
 
     const newQData = {
         title: data.title,
@@ -641,10 +568,25 @@ export const useStore = create<Store>((set, get) => ({
         createdAt: new Date().toISOString(),
     };
 
-    addDoc(collection(db, 'questions'), newQData);
-    updateDoc(doc(db, 'users', currentUser.id), { walletBalance: increment(-QUESTION_COST) });
-    set({ questionDraft: { title: '', text: '', categoryId: '', locationId: '', isAnonymous: false, attachments: [] } });
-    return true;
+    try {
+        await addDoc(collection(db, 'questions'), newQData);
+        
+        const userUpdate: any = {
+            lastQuestionMonth: currentMonthStr,
+            questionsThisMonth: questionsThisMonth + 1
+        };
+        if (cost > 0) {
+            userUpdate.walletBalance = increment(-cost);
+        }
+        
+        await updateDoc(doc(db, 'users', currentUser.id), userUpdate);
+        
+        set({ questionDraft: { title: '', text: '', categoryId: '', locationId: '', isAnonymous: false, attachments: [] } });
+        return true;
+    } catch (e) {
+        console.error(e);
+        return false;
+    }
   },
   
   addAnswer: async (questionId, text, attachmentUrls) => {
@@ -691,18 +633,41 @@ export const useStore = create<Store>((set, get) => ({
       await updateDoc(answerRef, {
           replies: arrayUnion(replyData)
       });
+      
+      // Increment global answer/comment count for the question
+      updateDoc(doc(db, 'questions', questionId), { answerCount: increment(1) });
   },
 
   deleteAnswer: async (questionId, answerId) => {
       if (!db) return;
-      await deleteDoc(doc(db, 'questions', questionId, 'answers', answerId));
-      updateDoc(doc(db, 'questions', questionId), { answerCount: increment(-1) });
+      
+      // First get the answer to see how many replies it has
+      const ansRef = doc(db, 'questions', questionId, 'answers', answerId);
+      const ansSnap = await getDoc(ansRef);
+      let countToRemove = 1; // The answer itself
+      
+      if (ansSnap.exists()) {
+          const data = ansSnap.data();
+          if (data.replies && Array.isArray(data.replies)) {
+              countToRemove += data.replies.length;
+          }
+      }
+
+      await deleteDoc(ansRef);
+      updateDoc(doc(db, 'questions', questionId), { answerCount: increment(-countToRemove) });
   },
 
   markAnswerAsBest: async (questionId, answerId) => {
       if (!db) return;
       await updateDoc(doc(db, 'questions', questionId), { isSolved: true });
       await updateDoc(doc(db, 'questions', questionId, 'answers', answerId), { isAccepted: true });
+      
+      // Bonus for best answer author
+      const ansSnap = await getDoc(doc(db, 'questions', questionId, 'answers', answerId));
+      if (ansSnap.exists()) {
+          const authorId = ansSnap.data().authorId;
+          await updateDoc(doc(db, 'users', authorId), { walletBalance: increment(BEST_ANSWER_BONUS) });
+      }
   },
 
   deleteQuestion: async (questionId) => { if (db) await deleteDoc(doc(db, 'questions', questionId)); },
@@ -734,8 +699,9 @@ export const useStore = create<Store>((set, get) => ({
                    } else if (report.entityType === 'ANSWER') {
                        const qId = Object.keys(answers).find(qid => answers[qid].some(a => a.id === report.entityId));
                        if (qId) {
-                           await deleteDoc(doc(db, 'questions', qId, 'answers', report.entityId));
-                           updateDoc(doc(db, 'questions', qId), { answerCount: increment(-1) });
+                           const ansRef = doc(db, 'questions', qId, 'answers', report.entityId);
+                           await deleteDoc(ansRef);
+                           updateDoc(doc(db, 'questions', qId), { answerCount: increment(-1) }); 
                        } 
                    }
                }
@@ -744,6 +710,19 @@ export const useStore = create<Store>((set, get) => ({
       } catch (e) {
           console.error("Error resolving report:", e);
       }
+  },
+  
+  seedDatabase: async () => {
+      if (!db) return;
+      // Check if coupons exist
+      const couponsSnap = await getDocs(collection(db, 'coupons'));
+      if (couponsSnap.empty) {
+          const MOCK_COUPONS = [
+              { title: '10% OFF Electronics', description: 'Get 10% off on all electronics at Alza.cz. Valid for purchases over 1000 CZK.', cost: 50, imageUrl: 'https://cdn.alza.cz/foto/f3/UA/UA107g6.jpg', partnerName: 'Alza.cz', promoCode: 'ALZA10ASK', expiresAt: '2024-12-31' },
+              { title: 'Free Delivery', description: 'Free delivery on your next order from Rohlik.cz.', cost: 30, imageUrl: 'https://www.rohlik.cz/assets/images/logo.svg', partnerName: 'Rohlik.cz', promoCode: 'FREEROHLIK', expiresAt: '2024-06-30' },
+              { title: '200 CZK Voucher', description: 'Discount voucher for Wolt orders.', cost: 100, imageUrl: 'https://cdn.worldvectorlogo.com/logos/wolt-1.svg', partnerName: 'Wolt', promoCode: 'WOLT200', expiresAt: '2024-12-31' }
+          ];
+          MOCK_COUPONS.forEach(c => addDoc(collection(db, 'coupons'), c));
+      }
   }
 }));
-    

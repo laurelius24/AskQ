@@ -196,6 +196,8 @@ export const translations: Dictionary = {
     'q.delete_q': 'Удалить вопрос',
     'q.report': 'Пожаловаться',
     'q.reported': 'Спасибо. Мы проверим этот контент.',
+    'q.view_more': 'Показать еще ответы',
+    'q.show_less': 'Свернуть ветку',
     
     // Share Modal
     'share.title': 'Поделиться',

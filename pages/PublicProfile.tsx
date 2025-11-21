@@ -21,10 +21,10 @@ export const PublicProfile: React.FC = () => {
   const user = userId ? getUserById(userId) : null;
   const isMe = currentUser?.id === userId;
 
-  const handleDeleteQuestion = (e: React.MouseEvent, questionId: string) => {
+  const handleDeleteQuestion = async (e: React.MouseEvent, questionId: string) => {
       e.stopPropagation();
       if (window.confirm(t['q.delete_q_confirm'])) {
-          deleteQuestion(questionId);
+          await deleteQuestion(questionId);
       }
   };
 

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, ThumbsUp, Gift, VenetianMask, CheckCircle2, MoreHorizontal, Trash2, Share2, AlertTriangle, X } from 'lucide-react';
+import { Send, ThumbsUp, Gift, VenetianMask, CheckCircle2, MoreHorizontal, Trash2, Share2, AlertTriangle, X, ChevronDown, ChevronUp, CornerDownRight } from 'lucide-react';
 import { useStore, MIN_LIKES_FOR_BEST } from '../store';
 import { translations } from '../translations';
 import { Answer } from '../types';
@@ -64,6 +64,8 @@ export const QuestionDetail: React.FC = () => {
   const [mainAnswerText, setMainAnswerText] = useState('');
   const [mainAnswerImage, setMainAnswerImage] = useState<string | null>(null);
   const [replyingToId, setReplyingToId] = useState<string | null>(null);
+  
+  const [questionMenuOpen, setQuestionMenuOpen] = useState(false);
   
   // Mention logic
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -144,9 +146,9 @@ export const QuestionDetail: React.FC = () => {
       setReplyingToId(null);
   };
 
-  const handleDeleteQuestion = () => {
+  const handleDeleteQuestion = async () => {
       if (window.confirm(t['q.delete_q_confirm'])) {
-          deleteQuestion(storeQuestion.id);
+          await deleteQuestion(storeQuestion.id);
           navigate('/');
       }
   };
@@ -189,7 +191,12 @@ export const QuestionDetail: React.FC = () => {
       const isLiked = currentUser?.likedEntityIds.includes(answer.id);
       const canMarkBest = isMyQuestion && !storeQuestion.isSolved && answer.likes >= MIN_LIKES_FOR_BEST;
       const [menuOpen, setMenuOpen] = useState(false);
+      const [repliesExpanded, setRepliesExpanded] = useState(false);
       const isMe = currentUser?.id === answer.authorId;
+
+      const REPLIES_TO_SHOW = 2;
+      const hasHiddenReplies = answer.replies && answer.replies.length > REPLIES_TO_SHOW;
+      const visibleReplies = repliesExpanded ? answer.replies : answer.replies?.slice(0, REPLIES_TO_SHOW);
 
       const handleDelete = async () => {
           if (window.confirm(t['q.delete_confirm'])) {
@@ -247,7 +254,7 @@ export const QuestionDetail: React.FC = () => {
              <div className="text-gray-300 text-sm mb-3 whitespace-pre-wrap leading-relaxed">{formatText(answer.text)}</div>
              
              {answer.attachmentUrls?.map((url, i) => (
-                 <img key={i} src={url} className="w-28 h-28 rounded-xl object-cover mb-2" onClick={() => setFullScreenImage(url)} alt="attachment" />
+                 <img key={i} src={url} className="w-28 h-28 rounded-xl object-cover mb-2 cursor-pointer" onClick={() => setFullScreenImage(url)} alt="attachment" />
              ))}
 
              <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5">
@@ -285,16 +292,48 @@ export const QuestionDetail: React.FC = () => {
 
              {/* Nested Replies */}
              {answer.replies && answer.replies.length > 0 && (
-                 <div className="mt-3 pl-4 border-l-2 border-white/10 space-y-3">
-                     {answer.replies.map((reply: any, idx: number) => (
-                         <div key={idx} className="bg-white/5 p-3 rounded-xl">
-                             <div className="flex items-center gap-2 mb-1">
-                                 <span className="font-bold text-xs text-white">{reply.authorName}</span>
-                                 <span className="text-[10px] text-secondary">• {formatDate(reply.createdAt, t)}</span>
+                 <div className="mt-3 space-y-0">
+                     {visibleReplies?.map((reply: any, idx: number) => (
+                         <div key={idx} className="relative pl-6 pt-2">
+                             {/* Thread connector line */}
+                             <div className="absolute left-2 top-0 bottom-0 w-px bg-white/10"></div>
+                             <div className="absolute left-2 top-6 w-4 h-px bg-white/10"></div>
+                             
+                             <div className="bg-white/5 p-3 rounded-xl relative">
+                                 <div className="flex items-center gap-2 mb-1">
+                                     <span className="font-bold text-xs text-white">{reply.authorName}</span>
+                                     <span className="text-[10px] text-secondary">• {formatDate(reply.createdAt, t)}</span>
+                                 </div>
+                                 <div className="text-gray-300 text-xs leading-relaxed">{formatText(reply.text)}</div>
+                                 {reply.attachmentUrls?.map((url: string, i: number) => (
+                                     <img key={i} src={url} className="w-16 h-16 rounded-lg object-cover mt-2 cursor-pointer" onClick={() => setFullScreenImage(url)} alt="reply-attach" />
+                                 ))}
                              </div>
-                             <div className="text-gray-300 text-xs">{reply.text}</div>
                          </div>
                      ))}
+
+                     {hasHiddenReplies && (
+                         <div className="relative pl-6 pt-2">
+                             <div className="absolute left-2 top-0 h-4 w-px bg-white/10"></div>
+                             <div className="absolute left-2 top-4 w-4 h-px bg-white/10 rounded-bl-xl"></div>
+                             <button 
+                                onClick={() => setRepliesExpanded(!repliesExpanded)}
+                                className="flex items-center gap-1 text-xs font-bold text-primary hover:text-white transition-colors bg-white/5 px-3 py-1.5 rounded-lg ml-0"
+                             >
+                                 {repliesExpanded ? (
+                                     <>
+                                        <ChevronUp size={14} />
+                                        {t['q.show_less']}
+                                     </>
+                                 ) : (
+                                     <>
+                                        <CornerDownRight size={14} />
+                                        {t['q.view_more']} ({answer.replies.length - REPLIES_TO_SHOW})
+                                     </>
+                                 )}
+                             </button>
+                         </div>
+                     )}
                  </div>
              )}
         </div>
@@ -307,19 +346,42 @@ export const QuestionDetail: React.FC = () => {
             title={t['q.question']} 
             className="bg-bg/90 backdrop-blur-md"
             rightElement={
-                <button onClick={() => handleShare(storeQuestion.title, storeQuestion.text, storeQuestion.id)} className="p-2 text-secondary hover:text-white">
-                    <Share2 size={20} />
-                </button>
+                <div className="relative">
+                    <button onClick={() => setQuestionMenuOpen(!questionMenuOpen)} className="p-2 text-secondary hover:text-white">
+                        <MoreHorizontal size={24} />
+                    </button>
+                    {questionMenuOpen && (
+                        <div className="absolute right-0 top-10 bg-[#2C2C2E] border border-white/10 rounded-xl shadow-xl z-50 min-w-[160px] overflow-hidden animate-in fade-in zoom-in-95">
+                            <button 
+                                onClick={() => { setQuestionMenuOpen(false); handleShare(storeQuestion.title, storeQuestion.text, storeQuestion.id); }}
+                                className="w-full text-left px-4 py-3 text-xs font-bold text-white hover:bg-white/5 flex items-center gap-2"
+                            >
+                                <Share2 size={16} /> {t['q.share']}
+                            </button>
+                            
+                            {isMyQuestion ? (
+                                <button 
+                                    onClick={() => { setQuestionMenuOpen(false); handleDeleteQuestion(); }}
+                                    className="w-full text-left px-4 py-3 text-xs font-bold text-danger hover:bg-white/5 flex items-center gap-2"
+                                >
+                                    <Trash2 size={16} /> {t['q.delete_q']}
+                                </button>
+                            ) : (
+                                <button 
+                                    onClick={() => { setQuestionMenuOpen(false); handleOpenReport(storeQuestion.id, 'QUESTION'); }}
+                                    className="w-full text-left px-4 py-3 text-xs font-bold text-white hover:bg-white/5 flex items-center gap-2"
+                                >
+                                    <AlertTriangle size={16} /> {t['q.report']}
+                                </button>
+                            )}
+                        </div>
+                    )}
+                </div>
             }
         />
 
-        <div className="flex-1 overflow-y-auto px-4 pb-32 no-scrollbar">
+        <div className="flex-1 overflow-y-auto px-4 pb-32 no-scrollbar" onClick={() => setQuestionMenuOpen(false)}>
             <div className="bg-card p-5 rounded-3xl shadow-sm border border-white/5 mb-6 relative">
-                {isMyQuestion && (
-                    <button onClick={handleDeleteQuestion} className="absolute top-4 right-4 text-secondary/50 hover:text-danger">
-                        <Trash2 size={18} />
-                    </button>
-                )}
                 
                 <div className="flex items-center gap-3 mb-4" onClick={() => !storeQuestion.isAnonymous && navigate(`/user/${storeQuestion.authorId}`)}>
                      <div className="w-10 h-10 bg-input rounded-full flex items-center justify-center overflow-hidden border border-white/10">
@@ -356,12 +418,6 @@ export const QuestionDetail: React.FC = () => {
                         <ThumbsUp size={18} className={isQuestionLiked ? 'fill-current' : ''} />
                         <span className="font-bold">{storeQuestion.likes}</span>
                     </button>
-                    
-                    {!isMyQuestion && (
-                        <button onClick={() => handleOpenReport(storeQuestion.id, 'QUESTION')} className="text-secondary text-sm font-bold hover:text-white ml-auto">
-                            {t['q.report']}
-                        </button>
-                    )}
                 </div>
             </div>
 

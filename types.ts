@@ -83,6 +83,8 @@ export interface User {
   loginStreak: number;
   lastMonthlyClaim?: string; // ISO Date
   lastShareDate?: string; // ISO Date
+  questionsThisMonth?: number;
+  lastQuestionMonth?: string;
 }
 
 // 2. Location

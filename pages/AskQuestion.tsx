@@ -1,9 +1,9 @@
 
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore, QUESTION_COST } from '../store';
-import { MapPin, ChevronRight, X, Zap, ArrowLeft, ImageIcon, Hash, EyeOff } from 'lucide-react';
+import { MapPin, ChevronRight, X, Zap, ArrowLeft, ImageIcon, Hash, EyeOff, Loader2 } from 'lucide-react';
 import { translations } from '../translations';
 import { PrimaryButton } from '../components/PrimaryButton';
 
@@ -12,6 +12,7 @@ export const AskQuestion: React.FC = () => {
   const { selectedLocation, availableLocations, language, categories, addQuestion, currentUser, questionDraft, updateQuestionDraft } = useStore();
   const t = translations[language];
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Initialize state from draft
   useEffect(() => {
@@ -25,12 +26,21 @@ export const AskQuestion: React.FC = () => {
 
   const activeLocation = availableLocations.find(l => l.id === questionDraft.locationId);
   const activeCategory = categories.find(c => c.id === questionDraft.categoryId);
-  const canAfford = (currentUser?.walletBalance || 0) >= QUESTION_COST;
+  
+  // Cost Logic
+  const now = new Date();
+  const currentMonthStr = `${now.getFullYear()}-${now.getMonth() + 1}`;
+  let questionsThisMonth = currentUser?.questionsThisMonth || 0;
+  if (currentUser?.lastQuestionMonth !== currentMonthStr) questionsThisMonth = 0;
+  
+  const isFree = questionsThisMonth < 3;
+  const canAfford = isFree || (currentUser?.walletBalance || 0) >= QUESTION_COST;
 
-  const handleSubmit = () => {
-    if (!questionDraft.title.trim() || !questionDraft.text.trim() || !activeLocation) return;
+  const handleSubmit = async () => {
+    if (!questionDraft.title.trim() || !activeLocation || isSubmitting) return;
     
-    const success = addQuestion({
+    setIsSubmitting(true);
+    const success = await addQuestion({
         title: questionDraft.title,
         text: questionDraft.text,
         categoryId: questionDraft.categoryId, 
@@ -40,6 +50,7 @@ export const AskQuestion: React.FC = () => {
         backgroundStyle: 'white'
     });
     
+    setIsSubmitting(false);
     if (success) navigate('/');
     else alert(t['ask.low_balance']);
   };
@@ -181,18 +192,29 @@ export const AskQuestion: React.FC = () => {
 
       {/* Footer */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-bg border-t border-white/5 pb-safe z-30">
+        <div className="flex justify-between items-center mb-3 px-1">
+             <span className="text-xs text-secondary font-bold uppercase tracking-wider">Questions this month: {questionsThisMonth}/3 Free</span>
+        </div>
         <PrimaryButton 
             onClick={handleSubmit}
-            disabled={!questionDraft.text.trim() || !questionDraft.title.trim() || !canAfford}
+            disabled={!questionDraft.title.trim() || !canAfford || isSubmitting}
         >
-            <span className="text-base">{t['ask.submit']}</span>
-            <div className="w-px h-4 bg-white/20"></div>
-            <div className="flex items-center gap-1 opacity-90">
-                <span className="text-sm font-bold">{QUESTION_COST}</span>
-                <Zap size={14} fill="currentColor" />
-            </div>
+            {isSubmitting ? <Loader2 className="animate-spin" /> : (
+                <>
+                    <span className="text-base">{t['ask.submit']}</span>
+                    {!isFree && (
+                        <>
+                            <div className="w-px h-4 bg-white/20"></div>
+                            <div className="flex items-center gap-1 opacity-90">
+                                <span className="text-sm font-bold">{QUESTION_COST}</span>
+                                <Zap size={14} fill="currentColor" />
+                            </div>
+                        </>
+                    )}
+                </>
+            )}
         </PrimaryButton>
-        {!canAfford && (
+        {!canAfford && !isFree && (
             <p className="text-center text-danger text-sm mt-3 font-medium">{t['ask.low_balance']}</p>
         )}
       </div>
