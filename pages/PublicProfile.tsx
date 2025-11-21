@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+
+
+import React, { useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useStore } from '../store';
-import { ArrowLeft, MessageCircle, Link as LinkIcon, ThumbsUp, Trash2, MapPin } from 'lucide-react';
+import { MessageCircle, Link as LinkIcon, ThumbsUp, Trash2, MapPin } from 'lucide-react';
 import { translations } from '../translations';
 import { LocationType } from '../types';
+import { PageHeader } from '../components/PageHeader';
 
 export const PublicProfile: React.FC = () => {
   const { userId } = useParams();
@@ -13,7 +16,6 @@ export const PublicProfile: React.FC = () => {
   const t = translations[language];
 
   // Get initial tab from navigation state or default to questions
-  // Removed 'coupons' from valid tabs here
   const [activeTab, setActiveTab] = useState<'questions' | 'answers'>((location.state as any)?.initialTab || 'questions');
 
   const user = userId ? getUserById(userId) : null;
@@ -29,9 +31,7 @@ export const PublicProfile: React.FC = () => {
   if (!user) {
       return (
           <div className="flex flex-col items-center justify-center h-screen text-secondary bg-bg">
-              <button onClick={() => navigate(-1)} className="mb-4 p-2 rounded-full bg-white/5">
-                <ArrowLeft className="text-white" />
-              </button>
+              <PageHeader title="" />
               {t['pub.not_found']}
           </div>
       );
@@ -43,13 +43,7 @@ export const PublicProfile: React.FC = () => {
 
   return (
     <div className="pb-24 bg-bg min-h-screen text-white page-transition">
-       {/* Top Bar */}
-       <div className="bg-bg/95 backdrop-blur-xl p-4 sticky top-0 z-10 flex items-center gap-3 border-b border-white/5">
-            <button onClick={() => navigate(-1)} className="p-2 hover:bg-white/10 rounded-full active:bg-white/20 transition-colors">
-                <ArrowLeft size={24} className="text-white" />
-            </button>
-            <h1 className="text-lg font-bold text-white truncate">{user.displayName}</h1>
-       </div>
+       <PageHeader title={user.displayName} className="bg-bg/95 backdrop-blur-xl" />
 
        <div className="p-4 space-y-6">
             {/* 1. Name, Bio and Picture */}

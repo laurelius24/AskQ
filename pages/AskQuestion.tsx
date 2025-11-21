@@ -1,8 +1,11 @@
+
+
 import React, { useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore, QUESTION_COST } from '../store';
 import { MapPin, ChevronRight, X, Zap, ArrowLeft, ImageIcon, Hash, EyeOff } from 'lucide-react';
 import { translations } from '../translations';
+import { PrimaryButton } from '../components/PrimaryButton';
 
 export const AskQuestion: React.FC = () => {
   const navigate = useNavigate();
@@ -178,10 +181,9 @@ export const AskQuestion: React.FC = () => {
 
       {/* Footer */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-bg border-t border-white/5 pb-safe z-30">
-        <button 
+        <PrimaryButton 
             onClick={handleSubmit}
             disabled={!questionDraft.text.trim() || !questionDraft.title.trim() || !canAfford}
-            className="w-full h-14 bg-primary hover:bg-primary/90 text-white font-bold rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all flex items-center justify-center gap-3 shadow-lg shadow-primary/10"
         >
             <span className="text-base">{t['ask.submit']}</span>
             <div className="w-px h-4 bg-white/20"></div>
@@ -189,7 +191,7 @@ export const AskQuestion: React.FC = () => {
                 <span className="text-sm font-bold">{QUESTION_COST}</span>
                 <Zap size={14} fill="currentColor" />
             </div>
-        </button>
+        </PrimaryButton>
         {!canAfford && (
             <p className="text-center text-danger text-sm mt-3 font-medium">{t['ask.low_balance']}</p>
         )}

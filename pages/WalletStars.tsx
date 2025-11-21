@@ -1,8 +1,11 @@
+
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
-import { ArrowLeft, Star, Copy, LogOut, ArrowDownLeft, ArrowUpRight, Loader2, X } from 'lucide-react';
+import { Star, Copy, LogOut, ArrowDownLeft, ArrowUpRight, Loader2, X } from 'lucide-react';
 import { translations } from '../translations';
+import { PageHeader } from '../components/PageHeader';
 
 export const WalletStars: React.FC = () => {
   const navigate = useNavigate();
@@ -11,10 +14,6 @@ export const WalletStars: React.FC = () => {
 
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
-
-  const handleBack = () => {
-    navigate('/profile');
-  };
 
   const simulateConnection = (walletName: string) => {
       setIsConnecting(true);
@@ -37,13 +36,7 @@ export const WalletStars: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col bg-bg text-white page-transition overflow-hidden">
-      {/* Header */}
-      <div className="shrink-0 p-4 border-b border-white/5 flex items-center gap-3 bg-bg sticky top-0 z-10">
-        <button onClick={handleBack} className="p-2 -ml-2 hover:bg-white/10 rounded-full active:bg-white/20 transition-colors">
-            <ArrowLeft size={24} />
-        </button>
-        <h1 className="text-lg font-bold">{t['wallet.stars.title']}</h1>
-      </div>
+      <PageHeader title={t['wallet.stars.title']} onBack={() => navigate('/profile')} />
 
       <div className="flex-1 overflow-y-auto p-4 pb-24 no-scrollbar">
           {/* Balance Card */}

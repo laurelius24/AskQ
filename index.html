@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -51,11 +52,16 @@
           scrollbar-width: none;  /* Firefox */
       }
       
+      :root {
+        --tg-viewport-height: 100vh;
+        --tg-viewport-stable-height: 100vh;
+      }
+
       html {
         background-color: #000000;
         width: 100%;
         height: 100%;
-        overscroll-behavior: none;
+        overscroll-behavior: none; /* Prevent rubber-banding */
       }
 
       body {
@@ -66,7 +72,10 @@
         width: 100%;
         height: 100%;
         margin: 0;
-        overflow: hidden; /* Use root for scrolling */
+        padding: 0;
+        position: fixed; /* Lock body to prevent scroll bounce */
+        inset: 0;
+        overflow: hidden;
         touch-action: pan-x pan-y;
       }
 
@@ -76,6 +85,9 @@
         overflow: hidden;
         display: flex;
         flex-direction: column;
+        /* Handle safe areas for iPhone notch/home bar */
+        padding-top: env(safe-area-inset-top); 
+        padding-bottom: env(safe-area-inset-bottom);
       }
 
       /* Critical for mobile inputs */
@@ -90,13 +102,10 @@
         max-width: 100%;
       }
       
-      /* Prevent text selection generally to feel like an app, but allow on inputs above */
+      /* Prevent text selection generally to feel like an app */
       .noselect {
         -webkit-touch-callout: none;
         -webkit-user-select: none;
-        -khtml-user-select: none;
-        -moz-user-select: none;
-        -ms-user-select: none;
         user-select: none;
       }
 
@@ -108,6 +117,7 @@
         from { opacity: 0; transform: translateY(8px); }
         to { opacity: 1; transform: translateY(0); }
       }
+      
       .pb-safe {
         padding-bottom: env(safe-area-inset-bottom);
       }
@@ -133,7 +143,11 @@
     "zustand": "https://aistudiocdn.com/zustand@^5.0.8",
     "react-router-dom": "https://aistudiocdn.com/react-router-dom@^7.9.6",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/"
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js",
+    "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
+    "firebase/": "https://aistudiocdn.com/firebase@^12.6.0/"
   }
 }
 </script>

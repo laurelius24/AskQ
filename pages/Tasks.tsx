@@ -1,11 +1,12 @@
+
+
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
-import { ArrowLeft, Check, Calendar, Share2, User, Sparkles } from 'lucide-react';
+import { Check, Calendar, Share2, User, Sparkles } from 'lucide-react';
 import { translations } from '../translations';
+import { PageHeader } from '../components/PageHeader';
 
 export const Tasks: React.FC = () => {
-  const navigate = useNavigate();
   const { tasks, claimTaskReward, language } = useStore();
   const t = translations[language];
 
@@ -23,13 +24,7 @@ export const Tasks: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col bg-bg text-white page-transition overflow-hidden">
-      {/* Header */}
-      <div className="shrink-0 sticky top-0 z-10 bg-bg p-4 border-b border-white/5 flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="p-2 -ml-2 hover:bg-white/5 rounded-full transition-colors">
-            <ArrowLeft size={24} className="text-white" />
-        </button>
-        <h1 className="text-lg font-bold text-white">{t['tasks.title']}</h1>
-      </div>
+      <PageHeader title={t['tasks.title']} />
 
       <div className="flex-1 overflow-y-auto p-4 space-y-8 pb-24 no-scrollbar">
         

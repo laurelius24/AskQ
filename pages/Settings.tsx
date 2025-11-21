@@ -1,9 +1,13 @@
+
+
 import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
-import { ArrowLeft, MapPin, Save, Globe, AtSign, Camera, User } from 'lucide-react';
+import { MapPin, Save, Globe, AtSign, Camera, User } from 'lucide-react';
 import { translations } from '../translations';
 import { LocationType } from '../types';
+import { PageHeader } from '../components/PageHeader';
+import { PrimaryButton } from '../components/PrimaryButton';
 
 const InputGroup = ({ label, children, icon: Icon }: any) => (
     <div className="space-y-2">
@@ -53,14 +57,7 @@ export const Settings: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col bg-bg text-white page-transition overflow-hidden">
-      <div className="shrink-0 sticky top-0 z-10 bg-bg p-4 border-b border-white/5 flex items-center justify-between">
-        <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-white hover:text-white/80 transition-colors">
-            <ArrowLeft size={20} />
-            <span className="font-medium">Back</span>
-        </button>
-        <h1 className="text-lg font-bold text-white">{t['prof.settings']}</h1>
-        <div className="w-8"></div>
-      </div>
+      <PageHeader title={t['prof.settings']} />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-8 pb-24 no-scrollbar">
         
@@ -148,13 +145,10 @@ export const Settings: React.FC = () => {
       </div>
       
       <div className="absolute bottom-0 left-0 right-0 p-4 bg-bg border-t border-white/5 z-20">
-        <button
-            onClick={handleSave}
-            className="w-full py-4 bg-primary text-white font-bold rounded-2xl shadow-none active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
-        >
+        <PrimaryButton onClick={handleSave}>
             <Save size={20} />
             {t['settings.save']}
-        </button>
+        </PrimaryButton>
       </div>
     </div>
   );

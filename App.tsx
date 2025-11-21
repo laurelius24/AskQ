@@ -1,3 +1,5 @@
+
+
 import React, { useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
@@ -18,6 +20,46 @@ import { SelectLocationForQuestion } from './pages/SelectLocationForQuestion';
 import { SelectCategoryForQuestion } from './pages/SelectCategoryForQuestion';
 import { Inventory } from './pages/Inventory';
 import { useStore } from './store';
+import { Globe } from 'lucide-react';
+
+// --- Telegram Navigation Sync Component ---
+const TelegramNavigator = () => {
+    const navigate = useNavigate();
+    const location = useLocation();
+    
+    useEffect(() => {
+        const tg = window.Telegram?.WebApp;
+        if (!tg) return;
+
+        // 1. Force Fullscreen
+        tg.ready();
+        tg.expand();
+        tg.setHeaderColor('#000000');
+        tg.setBackgroundColor('#000000');
+
+        // 2. Handle Native Back Button
+        const handleBack = () => {
+            navigate(-1);
+        };
+
+        // Show back button if not on main tabs or root
+        // Main tabs: '/', '/search', '/shop', '/profile'
+        const mainRoutes = ['/', '/search', '/shop', '/profile'];
+        if (!mainRoutes.includes(location.pathname)) {
+            tg.BackButton.show();
+            tg.BackButton.onClick(handleBack);
+        } else {
+            tg.BackButton.hide();
+            tg.BackButton.offClick(handleBack);
+        }
+
+        return () => {
+            tg.BackButton.offClick(handleBack);
+        };
+    }, [location, navigate]);
+
+    return null;
+};
 
 // Wrapper for authenticated routes
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -35,6 +77,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     return <>{children}</>;
 };
 
+// FIXED: Defined OUTSIDE of App to prevent re-definition on every render
 const MainLayoutWrapper = () => {
     return (
         <Layout>
@@ -50,8 +93,28 @@ const MainLayoutWrapper = () => {
 };
 
 const App: React.FC = () => {
+  const { initializeListeners, isLoading } = useStore();
+
+  // Initialize Listeners
+  useEffect(() => {
+      initializeListeners();
+  }, [initializeListeners]);
+
+  // Global Loading State - Prevent rendering routes until we know auth state
+  if (isLoading) {
+      return (
+          <div className="h-screen w-full bg-bg flex flex-col items-center justify-center text-white">
+              <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mb-4 animate-pulse">
+                  <Globe size={32} className="text-white" />
+              </div>
+              <div className="font-bold text-lg tracking-wider">AskQ</div>
+          </div>
+      );
+  }
+
   return (
     <HashRouter>
+        <TelegramNavigator />
         <Routes>
             {/* Public / Onboarding Route */}
             <Route path="/onboarding" element={<Onboarding />} />

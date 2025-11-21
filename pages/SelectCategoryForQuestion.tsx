@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+
+
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
-import { ArrowLeft, ChevronRight, Utensils, Home, Plane, Calendar, CreditCard, MessageSquare, FileText, Banknote, Coffee, MoreHorizontal, Cat, Scale, Heart, Wifi, Sparkles, Landmark, BookOpen, GraduationCap, School, Users, Star, ShoppingBag, HelpCircle, Briefcase, Baby, Dumbbell, Bus, Wrench, Smile, Languages } from 'lucide-react';
+import { ChevronRight, Utensils, Home, Plane, Calendar, CreditCard, MessageSquare, FileText, Banknote, Coffee, MoreHorizontal, Cat, Scale, Heart, Wifi, Sparkles, Landmark, BookOpen, GraduationCap, School, Users, Star, ShoppingBag, HelpCircle, Briefcase, Baby, Dumbbell, Bus, Wrench, Smile, Languages } from 'lucide-react';
 import { translations } from '../translations';
+import { PageHeader } from '../components/PageHeader';
 
 export const SelectCategoryForQuestion: React.FC = () => {
   const { categories, updateQuestionDraft, language } = useStore();
@@ -50,13 +53,7 @@ export const SelectCategoryForQuestion: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col bg-bg text-white page-transition overflow-hidden">
-      {/* Header */}
-      <div className="shrink-0 p-4 flex items-center gap-3 border-b border-white/5 bg-bg">
-        <button onClick={() => navigate(-1)} className="p-2 -ml-2 rounded-full hover:bg-white/10 text-white">
-            <ArrowLeft size={24} />
-        </button>
-        <h2 className="text-lg font-bold text-white">{t['ask.select_cat_title']}</h2>
-      </div>
+      <PageHeader title={t['ask.select_cat_title']} />
 
       {/* List */}
       <div className="flex-1 overflow-y-auto px-4 py-4 no-scrollbar">

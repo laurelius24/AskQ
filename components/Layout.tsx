@@ -1,3 +1,5 @@
+
+
 import React, { useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Compass, Plus, User, Search, Ticket } from 'lucide-react';
@@ -31,7 +33,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]); // Removed savedScrollPositions to prevent infinite loop
+  }, [location.pathname]); 
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -58,14 +60,15 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   };
 
   return (
-    <div className="flex flex-col h-screen w-full bg-bg text-white font-sans overflow-hidden">
+    <div className="flex flex-col h-full w-full bg-bg text-white font-sans overflow-hidden fixed inset-0">
       {/* Main Content Area */}
       <main ref={mainRef} className="flex-1 overflow-y-auto no-scrollbar bg-bg">
         {children}
       </main>
 
       {/* Bottom Navigation Bar - Material Design Style */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-[#121212] border-t border-white/5 pb-safe pt-2 px-2 flex justify-between items-center z-30 h-[80px]">
+      {/* Added safe-area padding via .pb-safe (in global css) and explicit fixed positioning handling */}
+      <nav className="shrink-0 bg-[#121212] border-t border-white/5 pb-safe pt-2 px-2 flex justify-between items-center z-30 h-[calc(80px+env(safe-area-inset-bottom))]">
         
         <NavItem path="/" icon={Compass} label={t['nav.feed']} />
         <NavItem path="/search" icon={Search} label={t['nav.search']} />

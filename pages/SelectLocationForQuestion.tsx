@@ -1,9 +1,12 @@
+
+
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
-import { Search, ChevronRight, ArrowLeft, Globe, MapPin } from 'lucide-react';
+import { Search, ChevronRight, Globe, MapPin } from 'lucide-react';
 import { LocationType, LocationContext } from '../types';
 import { translations } from '../translations';
+import { PageHeader } from '../components/PageHeader';
 
 export const SelectLocationForQuestion: React.FC = () => {
   const { availableLocations, updateQuestionDraft, language } = useStore();
@@ -62,13 +65,7 @@ export const SelectLocationForQuestion: React.FC = () => {
 
   return (
     <div className="h-screen flex flex-col bg-bg text-white page-transition overflow-hidden">
-      {/* Header */}
-      <div className="shrink-0 p-4 flex items-center gap-3 border-b border-white/5">
-        <button onClick={handleBack} className="p-2 -ml-2 rounded-full hover:bg-white/10 text-white">
-            <ArrowLeft size={24} />
-        </button>
-        <h2 className="text-lg font-bold text-white">{t['ask.select_loc_title']}</h2>
-      </div>
+      <PageHeader title={t['ask.select_loc_title']} onBack={handleBack} />
 
       {/* Search Bar */}
       <div className="shrink-0 px-4 py-4">

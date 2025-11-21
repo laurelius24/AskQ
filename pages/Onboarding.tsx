@@ -1,8 +1,11 @@
-import React, { useState, useRef } from 'react';
+
+
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
 import { translations } from '../translations';
 import { Camera, ArrowRight } from 'lucide-react';
+import { PrimaryButton } from '../components/PrimaryButton';
 
 // "Notionists" style: Black & White characters with vibrant backgrounds
 const AVATARS = [
@@ -16,7 +19,7 @@ const AVATARS = [
 
 export const Onboarding: React.FC = () => {
   const navigate = useNavigate();
-  const { registerUser, language } = useStore();
+  const { registerUser, language, currentUser, telegramUser } = useStore();
   const t = translations[language];
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -25,11 +28,25 @@ export const Onboarding: React.FC = () => {
   const [username, setUsername] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0]);
 
-  const handleManualSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  // If user is already logged in, redirect immediately
+  useEffect(() => {
+      if (currentUser) {
+          navigate(currentUser.currentLocationId ? '/' : '/location');
+      }
+  }, [currentUser, navigate]);
+
+  // Pre-fill data from Telegram if available
+  useEffect(() => {
+      if (telegramUser) {
+          if (telegramUser.first_name) setName(telegramUser.first_name);
+          if (telegramUser.username) setUsername(telegramUser.username);
+      }
+  }, [telegramUser]);
+
+  const handleManualSubmit = () => {
     if (!name.trim() || !username.trim()) return;
     registerUser(name, username, selectedAvatar);
-    navigate('/location');
+    // Navigation happens in useEffect above once user is set
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -65,32 +82,33 @@ export const Onboarding: React.FC = () => {
                 </p>
             </div>
 
-            <div className="space-y-4 z-10 w-full shrink-0">
-                <button 
-                    onClick={() => setStep('FORM')}
-                    className="w-full py-4 bg-primary text-white font-bold rounded-2xl shadow-glow active:scale-[0.98] transition-transform"
-                >
+            <div className="space-y-4 z-10 w-full shrink-0 pb-safe">
+                <PrimaryButton onClick={() => setStep('FORM')}>
                     Start
-                </button>
+                </PrimaryButton>
             </div>
         </div>
       );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-bg px-4 py-6 page-transition overflow-hidden">
-        <div className="shrink-0 flex items-center mb-8">
-            <button onClick={() => setStep('WELCOME')} className="p-2 -ml-2 text-white"><ArrowRight className="rotate-180" /></button>
+    <div className="h-screen flex flex-col bg-bg page-transition overflow-hidden">
+        {/* Header */}
+        <div className="shrink-0 flex items-center p-4 pt-6">
+            <button onClick={() => setStep('WELCOME')} className="p-2 -ml-2 text-white rounded-full hover:bg-white/10 transition-colors">
+                <ArrowRight className="rotate-180" />
+            </button>
             <span className="font-bold text-lg ml-2">Create Profile</span>
         </div>
 
-        <div className="flex-1 overflow-y-auto pb-10 no-scrollbar">
-            <form onSubmit={handleManualSubmit} className="flex flex-col h-full">
-                <div className="flex justify-center mb-8">
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto px-4 pb-32 no-scrollbar">
+            <div className="flex flex-col">
+                <div className="flex justify-center mb-8 mt-2">
                     <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
-                        className="w-28 h-28 rounded-full overflow-hidden border-4 border-card bg-input relative group"
+                        className="w-28 h-28 rounded-full overflow-hidden border-4 border-card bg-input relative group transition-transform active:scale-95"
                     >
                         <img src={selectedAvatar} alt="avatar" className="w-full h-full object-cover" />
                         <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -143,20 +161,18 @@ export const Onboarding: React.FC = () => {
                         </div>
                     </div>
                 </div>
+                
+                <p className="text-center text-[10px] text-secondary mt-8 opacity-50 px-4">
+                    {t['onboard.terms']}
+                </p>
+            </div>
+        </div>
 
-                <div className="mt-auto pt-10">
-                    <button 
-                        type="submit"
-                        disabled={!name.trim() || !username.trim()}
-                        className="w-full py-4 bg-primary text-white font-bold rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed shadow-glow active:scale-[0.98] transition-all"
-                    >
-                        {t['onboard.submit']}
-                    </button>
-                    <p className="text-center text-[10px] text-secondary mt-4 opacity-50">
-                        {t['onboard.terms']}
-                    </p>
-                </div>
-            </form>
+        {/* Sticky Footer */}
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-bg border-t border-white/5 pb-safe z-30">
+            <PrimaryButton onClick={handleManualSubmit} disabled={!name.trim() || !username.trim()}>
+                {t['onboard.submit']}
+            </PrimaryButton>
         </div>
     </div>
   );
