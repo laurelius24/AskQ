@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
@@ -96,7 +97,7 @@ export const Feed: React.FC = () => {
   const sortedQuestions = [...locationQuestions].sort((a, b) => {
       if (sortBy === 'popular') {
           // Primary: Views, Secondary: Likes
-          return (b.views + (b.likes * 5)) - (a.views + (a.likes * 5));
+          return (b.views + ((b.likes || 0) * 5)) - (a.views + ((a.likes || 0) * 5));
       }
       // Default: Newest
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
@@ -271,11 +272,11 @@ export const Feed: React.FC = () => {
                             <div className="flex items-center gap-4">
                                 <div className="flex items-center gap-1.5">
                                     <ThumbsUp size={16} className="text-secondary" strokeWidth={2} />
-                                    <span className="font-bold text-white">{q.likes}</span>
+                                    <span className="font-bold text-white">{q.likes || 0}</span>
                                 </div>
                                 <div className="flex items-center gap-1.5">
                                     <MessageCircle size={16} className="text-secondary" strokeWidth={2} />
-                                    <span className="font-bold text-white">5</span>
+                                    <span className="font-bold text-white">{q.answerCount || 0}</span>
                                 </div>
                             </div>
                         </div>

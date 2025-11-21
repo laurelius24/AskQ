@@ -117,6 +117,7 @@ export interface Question {
   createdAt: string;
   views: number;
   likes: number;
+  answerCount: number; // Added field for feed display
   tags: string[];
   isSolved: boolean;
   aiGeneratedSummary?: string;
@@ -147,6 +148,7 @@ export interface Coupon {
   cost: number;
   imageUrl: string;
   partnerName: string;
+  partnerLogo?: string; // Made optional or removed based on usage
   promoCode: string;
   expiresAt: string;
 }

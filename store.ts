@@ -1,10 +1,11 @@
+
 import { create } from 'zustand';
 import { AppState, LocationContext, User, UserRole, LocationType, Coupon, Language, Question, Category, Task, Answer, QuestionDraft, Report, TelegramUser } from './types';
 import { db } from './services/firebase';
 import { 
   collection, addDoc, onSnapshot, query, orderBy, doc, 
   updateDoc, arrayUnion, arrayRemove, setDoc, getDoc, 
-  where, increment, deleteDoc, getDocs, runTransaction
+  where, increment, deleteDoc, getDocs, runTransaction, writeBatch
 } from 'firebase/firestore';
 
 // --- ECONOMY CONSTANTS ---
@@ -14,9 +15,9 @@ export const BEST_ANSWER_BONUS = 20;   // Reward if answer selected as best
 export const MONTHLY_REWARD = 150;     // 3 questions worth
 export const STREAK_REWARD = 100;      // 7 days streak
 export const SHARE_REWARD = 20;        // Share reward
-export const MIN_LIKES_FOR_BEST = 2;   // Threshold for best answer
+export const MIN_LIKES_FOR_BEST = 5;   // Threshold for best answer
 
-// Categories
+// Categories (Static Config)
 export const MOCK_CATEGORIES: Category[] = [
   { id: 'visa', name: 'cat.visa', icon: 'visa' },
   { id: 'money', name: 'cat.money', icon: 'money' },
@@ -55,7 +56,7 @@ if (otherIndex > -1) {
     MOCK_CATEGORIES.push(other);
 }
 
-// Locations
+// Locations (Static Config)
 const MOCK_LOCATIONS: LocationContext[] = [
     { id: 'cz', name: 'Чехия', type: LocationType.COUNTRY, flagEmoji: '🇨🇿', phoneCode: '420' },
     { id: 'cz_prg', name: 'Прага', type: LocationType.CITY, flagEmoji: '', parentId: 'cz' },
@@ -98,18 +99,93 @@ const MOCK_LOCATIONS: LocationContext[] = [
     return a.name.localeCompare(b.name);
 });
 
+// Initial Data for Seeding (If DB is empty)
+const INITIAL_COUPONS = [
+    {
+        id: 'c1',
+        title: '10% OFF Everything',
+        partnerName: 'Alza.cz',
+        description: 'Get 10% discount on all electronics. Minimum purchase 1000 CZK. Valid for online orders only.',
+        cost: 500,
+        imageUrl: 'https://cdn.alza.cz/Foto/ImgGalery/Image/alza_logo_2020.png',
+        promoCode: 'ALZA10ASKQ',
+        expiresAt: '2025-12-31'
+    },
+    {
+        id: 'c2',
+        title: 'Free Delivery',
+        partnerName: 'Wolt',
+        description: 'Free delivery for your next 3 orders. Valid for new and existing customers in Prague and Brno.',
+        cost: 300,
+        imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/c5/Wolt_Logo_RGB.png',
+        promoCode: 'WOLTFREE24',
+        expiresAt: '2025-06-30'
+    },
+    {
+        id: 'c3',
+        title: '200 CZK Voucher',
+        partnerName: 'Rohlik.cz',
+        description: 'Discount on your first grocery order over 1000 CZK.',
+        cost: 400,
+        imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/f/f7/Rohlik_logo.png',
+        promoCode: 'ROHLIK200',
+        expiresAt: '2025-12-31'
+    },
+    {
+        id: 'c4',
+        title: '30% OFF Rides',
+        partnerName: 'Uber',
+        description: 'Get 30% off your next 5 rides in Prague. Max discount 100 CZK per ride.',
+        cost: 600,
+        imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/c/cc/Uber_logo_2018.png',
+        promoCode: 'UBERASK30',
+        expiresAt: '2025-09-01'
+    }
+];
+
+const INITIAL_TASKS = [
+    {
+        id: 'task_monthly',
+        title: 'task.monthly',
+        reward: MONTHLY_REWARD,
+        icon: 'calendar',
+        type: 'MONTHLY',
+        status: 'READY'
+    },
+    {
+        id: 'task_streak',
+        title: 'task.streak',
+        reward: STREAK_REWARD,
+        icon: 'user',
+        type: 'STREAK',
+        status: 'LOCKED'
+    },
+    {
+        id: 'task_share',
+        title: 'task.share',
+        reward: SHARE_REWARD,
+        icon: 'share',
+        type: 'SHARE',
+        status: 'READY'
+    }
+];
+
 const sanitizeData = (data: any): any => {
   if (!data) return data;
   if (typeof data !== 'object') return data;
+  // Check for Firestore circular references (like firestore instance)
+  if ('firestore' in data || 'app' in data) return null; 
+  
   if (data.toDate && typeof data.toDate === 'function') {
     return data.toDate().toISOString();
   }
   if (Array.isArray(data)) {
-    return data.map(sanitizeData);
+    return data.map(sanitizeData).filter(item => item !== null);
   }
   const sanitized: any = {};
   for (const key in data) {
-    sanitized[key] = sanitizeData(data[key]);
+    const val = sanitizeData(data[key]);
+    if (val !== null) sanitized[key] = val;
   }
   return sanitized;
 };
@@ -146,8 +222,10 @@ interface Store extends AppState {
   
   addQuestion: (data: { title: string, text: string, categoryId: string, locationId: string, isAnonymous: boolean, attachments: string[], backgroundStyle?: string }) => boolean;
   addAnswer: (questionId: string, text: string, attachmentUrls: string[]) => Promise<void>;
+  addReply: (questionId: string, parentAnswerId: string, text: string, attachments?: string[]) => Promise<void>;
   markAnswerAsBest: (questionId: string, answerId: string) => Promise<void>;
   deleteQuestion: (questionId: string) => Promise<void>;
+  deleteAnswer: (questionId: string, answerId: string) => Promise<void>;
   toggleLike: (entityId: string, type: 'QUESTION' | 'ANSWER') => Promise<void>;
   
   saveScrollPosition: (path: string, position: number) => void;
@@ -195,12 +273,45 @@ export const useStore = create<Store>((set, get) => ({
           return;
       }
 
+      // --- SEED DATABASE IF EMPTY ---
+      const seedDatabase = async () => {
+          try {
+              const couponsSnap = await getDocs(collection(db, 'coupons'));
+              if (couponsSnap.empty) {
+                  console.log("Seeding Coupons...");
+                  const batch = writeBatch(db);
+                  INITIAL_COUPONS.forEach(c => {
+                      const docRef = doc(collection(db, 'coupons'));
+                      batch.set(docRef, c);
+                  });
+                  await batch.commit();
+              }
+
+              const tasksSnap = await getDocs(collection(db, 'tasks'));
+              if (tasksSnap.empty) {
+                  console.log("Seeding Tasks...");
+                  const batch = writeBatch(db);
+                  INITIAL_TASKS.forEach(t => {
+                      const docRef = doc(collection(db, 'tasks'));
+                      batch.set(docRef, t);
+                  });
+                  await batch.commit();
+              }
+          } catch (e) {
+              console.error("Error seeding DB:", e);
+          }
+      };
+      seedDatabase();
+      // ------------------------------
+
+      // Questions Listener
       const qQuery = query(collection(db, 'questions'), orderBy('createdAt', 'desc'));
       const unsubQuestions = onSnapshot(qQuery, (snapshot) => {
           const questions = snapshot.docs.map(d => ({ id: d.id, ...sanitizeData(d.data()) } as Question));
           set({ questions });
       });
 
+      // Users Listener
       const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
           const usersMap: Record<string, User> = {};
           snapshot.forEach(doc => {
@@ -213,11 +324,13 @@ export const useStore = create<Store>((set, get) => ({
           set({ usersMap });
       });
 
+      // Coupons Listener
       const unsubCoupons = onSnapshot(collection(db, 'coupons'), (snapshot) => {
           const coupons = snapshot.docs.map(d => ({ id: d.id, ...sanitizeData(d.data()) } as Coupon));
           set({ availableCoupons: coupons });
       });
 
+      // Reports Listener
       const unsubReports = onSnapshot(collection(db, 'reports'), (snapshot) => {
         const reports = snapshot.docs.map(d => ({ id: d.id, ...sanitizeData(d.data()) } as Report));
         set({ reports });
@@ -229,6 +342,7 @@ export const useStore = create<Store>((set, get) => ({
           let userFound = null;
           let docRef = null;
 
+          // 1. Try logging in via Telegram ID
           if (telegramUser) {
               const q = query(collection(db, 'users'), where('telegramId', '==', telegramUser.id));
               const querySnapshot = await getDocs(q);
@@ -239,6 +353,7 @@ export const useStore = create<Store>((set, get) => ({
               }
           } 
 
+          // 2. Try logging in via Local Storage (Fallback for testing outside TG)
           if (!userFound) {
               const storedId = localStorage.getItem('askq_userid');
               if (storedId) {
@@ -274,6 +389,8 @@ export const useStore = create<Store>((set, get) => ({
               
               userFound.loginStreak = newStreak; // Update local
               set({ currentUser: userFound });
+              
+              // Set location from user profile if exists
               if (userFound.currentLocationId) {
                    const loc = MOCK_LOCATIONS.find(l => l.id === userFound.currentLocationId);
                    if (loc) set({ selectedLocation: loc });
@@ -284,6 +401,8 @@ export const useStore = create<Store>((set, get) => ({
       };
 
       authenticate();
+      
+      // Clean up listeners on unmount
       return () => { unsubQuestions(); unsubUsers(); unsubCoupons(); unsubReports(); };
   },
 
@@ -345,8 +464,6 @@ export const useStore = create<Store>((set, get) => ({
 
       try {
           if (type === 'MONTHLY') {
-               // Server-side check implies trust in client timestamp or complex cloud function
-               // We trust client logic here for MVP
                await updateDoc(userRef, {
                    walletBalance: increment(MONTHLY_REWARD),
                    lastMonthlyClaim: now
@@ -355,10 +472,9 @@ export const useStore = create<Store>((set, get) => ({
                if (currentUser.loginStreak < 7) return;
                await updateDoc(userRef, {
                    walletBalance: increment(STREAK_REWARD),
-                   loginStreak: 0 // Reset streak after claim? Or keep counting? Usually reset for weekly
+                   loginStreak: 0 
                });
           } else if (type === 'SHARE') {
-               // Verification simulated by UI delay
                await updateDoc(userRef, {
                    walletBalance: increment(SHARE_REWARD),
                    lastShareDate: now
@@ -408,7 +524,7 @@ export const useStore = create<Store>((set, get) => ({
         displayName: name,
         role: UserRole.USER, 
         reputationScore: 0,
-        walletBalance: MONTHLY_REWARD, // Start with 3 questions worth
+        walletBalance: MONTHLY_REWARD, 
         starsBalance: 0, 
         avatarUrl: avatarUrl,
         bio,
@@ -416,7 +532,7 @@ export const useStore = create<Store>((set, get) => ({
         inventory: [],
         language,
         likedEntityIds: [],
-        telegramId: telegramUser?.id || null,
+        telegramId: telegramUser?.id || null, // Important for auto-login
         loginStreak: 1,
         lastLoginDate: new Date().toISOString()
     };
@@ -504,8 +620,6 @@ export const useStore = create<Store>((set, get) => ({
     } catch (e) { return false; }
   },
 
-  claimTaskReward: (taskId) => {}, // Deprecated, use checkAndClaimTask
-
   addQuestion: (data) => {
     const { currentUser } = get();
     if(!currentUser || !db || currentUser.walletBalance < QUESTION_COST) return false;
@@ -522,6 +636,7 @@ export const useStore = create<Store>((set, get) => ({
         tags: [],
         views: 0,
         likes: 0,
+        answerCount: 0,
         isSolved: false,
         createdAt: new Date().toISOString(),
     };
@@ -552,22 +667,42 @@ export const useStore = create<Store>((set, get) => ({
 
       await addDoc(collection(db, 'questions', questionId, 'answers'), newAnswerData);
       
-      // Reward User for answering
+      updateDoc(doc(db, 'questions', questionId), { answerCount: increment(1) });
+
       updateDoc(doc(db, 'users', currentUser.id), {
           walletBalance: increment(ANSWER_REWARD),
           reputationScore: increment(1)
       });
   },
 
+  addReply: async (questionId, parentAnswerId, text, attachments = []) => {
+      const { currentUser } = get();
+      if (!currentUser || !db) return;
+
+      const replyData = {
+          authorId: currentUser.id,
+          authorName: currentUser.displayName,
+          text: text,
+          createdAt: new Date().toISOString(),
+          attachmentUrls: attachments
+      };
+
+      const answerRef = doc(db, 'questions', questionId, 'answers', parentAnswerId);
+      await updateDoc(answerRef, {
+          replies: arrayUnion(replyData)
+      });
+  },
+
+  deleteAnswer: async (questionId, answerId) => {
+      if (!db) return;
+      await deleteDoc(doc(db, 'questions', questionId, 'answers', answerId));
+      updateDoc(doc(db, 'questions', questionId), { answerCount: increment(-1) });
+  },
+
   markAnswerAsBest: async (questionId, answerId) => {
       if (!db) return;
-      // Mark question as solved
       await updateDoc(doc(db, 'questions', questionId), { isSolved: true });
-      // Mark answer as accepted
       await updateDoc(doc(db, 'questions', questionId, 'answers', answerId), { isAccepted: true });
-      
-      // Optional: Give Bonus to Answer Author? Need to fetch answer to get authorId. 
-      // Simplified: We just mark it for now.
   },
 
   deleteQuestion: async (questionId) => { if (db) await deleteDoc(doc(db, 'questions', questionId)); },
@@ -597,18 +732,13 @@ export const useStore = create<Store>((set, get) => ({
                    if (report.entityType === 'QUESTION') {
                        await deleteDoc(doc(db, 'questions', report.entityId));
                    } else if (report.entityType === 'ANSWER') {
-                       // Try to find parent question ID via answers cache
                        const qId = Object.keys(answers).find(qid => answers[qid].some(a => a.id === report.entityId));
                        if (qId) {
                            await deleteDoc(doc(db, 'questions', qId, 'answers', report.entityId));
-                       } else {
-                           // If we can't find it (e.g. answers not loaded), we might fail to delete it easily here.
-                           // Ideally we would query collectionGroup, but for now we rely on cache.
-                           console.warn("Could not find parent question for answer " + report.entityId);
-                       }
+                           updateDoc(doc(db, 'questions', qId), { answerCount: increment(-1) });
+                       } 
                    }
                }
-               // Mark report as resolved
                await updateDoc(reportRef, { status: 'RESOLVED' });
           }
       } catch (e) {
@@ -616,3 +746,4 @@ export const useStore = create<Store>((set, get) => ({
       }
   }
 }));
+    

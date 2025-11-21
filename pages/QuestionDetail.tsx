@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Send, ThumbsUp, Gift, VenetianMask, CheckCircle2, MoreHorizontal, Trash2, Share2, AlertTriangle } from 'lucide-react';
+import { Send, ThumbsUp, Gift, VenetianMask, CheckCircle2, MoreHorizontal, Trash2, Share2, AlertTriangle, X } from 'lucide-react';
 import { useStore, MIN_LIKES_FOR_BEST } from '../store';
 import { translations } from '../translations';
 import { Answer } from '../types';
@@ -42,7 +42,7 @@ const formatDate = (dateString: string, t: any) => {
 export const QuestionDetail: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { currentUser, language, getUserById, getAllUsers, toggleLike, questions, subscribeToAnswers, answers, addAnswer, markAnswerAsBest, deleteQuestion, submitReport, sendTip } = useStore();
+  const { currentUser, language, getUserById, getAllUsers, toggleLike, questions, subscribeToAnswers, answers, addAnswer, addReply, markAnswerAsBest, deleteQuestion, deleteAnswer, submitReport, sendTip } = useStore();
   const t = translations[language];
   
   useEffect(() => {
@@ -132,13 +132,13 @@ export const QuestionDetail: React.FC = () => {
   const handleSubmitMainAnswer = async () => {
       if (!mainAnswerText.trim() && !mainAnswerImage) return;
       
-      let finalAttachments = mainAnswerImage ? [mainAnswerImage] : [];
-      let finalText = mainAnswerText;
-
-      // If replying, maybe prefix? For now we treat all as top level answers or could implement nested structure
-      // We'll keep it simple: all answers are to the question, but we could mentally link them.
+      // If replying to a specific answer (nested)
+      if (replyingToId) {
+          await addReply(storeQuestion.id, replyingToId, mainAnswerText, mainAnswerImage ? [mainAnswerImage] : []);
+      } else {
+          await addAnswer(storeQuestion.id, mainAnswerText, mainAnswerImage ? [mainAnswerImage] : []);
+      }
       
-      await addAnswer(storeQuestion.id, finalText, finalAttachments);
       setMainAnswerText('');
       setMainAnswerImage(null);
       setReplyingToId(null);
@@ -191,6 +191,12 @@ export const QuestionDetail: React.FC = () => {
       const [menuOpen, setMenuOpen] = useState(false);
       const isMe = currentUser?.id === answer.authorId;
 
+      const handleDelete = async () => {
+          if (window.confirm(t['q.delete_confirm'])) {
+              await deleteAnswer(storeQuestion.id, answer.id);
+          }
+      };
+
       return (
         <div className={`p-4 rounded-3xl border mb-3 bg-card ${answer.isAccepted ? 'border-success/50 bg-success/5' : 'border-white/5'}`}>
              <div className="flex justify-between items-start mb-2 relative">
@@ -212,7 +218,10 @@ export const QuestionDetail: React.FC = () => {
                     {menuOpen && (
                         <div className="absolute right-0 top-6 bg-[#2C2C2E] border border-white/10 rounded-xl shadow-xl z-10 min-w-[140px] overflow-hidden animate-in fade-in zoom-in-95">
                             {isMe && (
-                                <button className="w-full text-left px-4 py-3 text-xs font-bold text-danger hover:bg-white/5 flex items-center gap-2">
+                                <button 
+                                    onClick={() => { setMenuOpen(false); handleDelete(); }}
+                                    className="w-full text-left px-4 py-3 text-xs font-bold text-danger hover:bg-white/5 flex items-center gap-2"
+                                >
                                     <Trash2 size={14} /> {t['q.delete']}
                                 </button>
                             )}
@@ -248,7 +257,10 @@ export const QuestionDetail: React.FC = () => {
                         <span className="font-bold text-xs">{answer.likes || 0}</span>
                     </button>
                     <button 
-                        onClick={() => setMainAnswerText(`@${answer.authorName} `)}
+                        onClick={() => {
+                            setReplyingToId(answer.id);
+                            setMainAnswerText(`@${answer.authorName} `);
+                        }}
                         className="text-secondary text-xs font-bold hover:text-white"
                     >
                         {t['q.reply']}
@@ -270,6 +282,21 @@ export const QuestionDetail: React.FC = () => {
                     )}
                 </div>
              </div>
+
+             {/* Nested Replies */}
+             {answer.replies && answer.replies.length > 0 && (
+                 <div className="mt-3 pl-4 border-l-2 border-white/10 space-y-3">
+                     {answer.replies.map((reply: any, idx: number) => (
+                         <div key={idx} className="bg-white/5 p-3 rounded-xl">
+                             <div className="flex items-center gap-2 mb-1">
+                                 <span className="font-bold text-xs text-white">{reply.authorName}</span>
+                                 <span className="text-[10px] text-secondary">• {formatDate(reply.createdAt, t)}</span>
+                             </div>
+                             <div className="text-gray-300 text-xs">{reply.text}</div>
+                         </div>
+                     ))}
+                 </div>
+             )}
         </div>
       );
   };
@@ -339,7 +366,7 @@ export const QuestionDetail: React.FC = () => {
             </div>
 
             <h3 className="font-bold text-white mb-4 px-1 flex items-center justify-between">
-                <span>{t['q.answers']} ({currentAnswers.length})</span>
+                <span>{t['q.answers']} ({storeQuestion.answerCount || currentAnswers.length})</span>
             </h3>
             
             <div className="space-y-2">
@@ -354,6 +381,12 @@ export const QuestionDetail: React.FC = () => {
 
         {/* Sticky Input Bar */}
         <div className="fixed bottom-0 left-0 right-0 bg-[#121212] border-t border-white/5 px-4 py-3 pb-safe z-40">
+             {replyingToId && (
+                 <div className="bg-white/5 p-2 rounded-lg mb-2 flex justify-between items-center text-xs">
+                     <span className="text-secondary">Replying to comment...</span>
+                     <button onClick={() => setReplyingToId(null)}><X size={14} /></button>
+                 </div>
+             )}
              {mainAnswerImage && (
                  <div className="mb-2 relative inline-block">
                      <img src={mainAnswerImage} className="h-16 rounded-lg border border-white/10" alt="preview" />
