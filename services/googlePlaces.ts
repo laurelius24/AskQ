@@ -1,6 +1,4 @@
 
-import { GoogleGenAI } from "@google/genai";
-
 declare global {
   interface Window {
     google: any;
@@ -176,4 +174,13 @@ export const getCountryCode = (placeId: string): Promise<string | null> => {
             resolve(null);
         });
     });
+};
+
+export const getFlagEmoji = (countryCode: string | null | undefined): string => {
+  if (!countryCode) return '🌐';
+  const codePoints = countryCode
+    .toUpperCase()
+    .split('')
+    .map(char =>  127397 + char.charCodeAt(0));
+  return String.fromCodePoint(...codePoints);
 };

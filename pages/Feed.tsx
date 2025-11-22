@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
-import { MessageCircle, Eye, MapPin, CheckCircle2, TrendingUp, Target, ChevronRight, Globe, Clock, Flame, ThumbsUp, FileText, Banknote, Coffee, MoreHorizontal, Utensils, Cat, Home, Scale, Heart, Wifi, Sparkles, Landmark, BookOpen, GraduationCap, School, Users, Star, ShoppingBag, HelpCircle, Plane, Briefcase, Baby, Dumbbell, Bus, Wrench, Smile, Languages, Calendar, CreditCard, MessageSquare } from 'lucide-react';
+import { MessageCircle, MapPin, CheckCircle2, TrendingUp, Target, ChevronRight, Globe, Clock, Flame, ThumbsUp, Loader2, FileText, Banknote, Coffee, MoreHorizontal, Utensils, Cat, Home, Scale, Heart, Wifi, Sparkles, Landmark, BookOpen, GraduationCap, School, Users, Star, ShoppingBag, Plane, Briefcase, Baby, Dumbbell, Bus, Wrench, Smile, Languages, Calendar, Car, HeartHandshake, MessageSquare } from 'lucide-react';
 import { translations } from '../translations';
 import { LocationType } from '../types';
 
@@ -21,37 +21,38 @@ const formatText = (text: string) => {
     });
 };
 
-const getCategoryIcon = (iconName: string) => {
+const getCategoryIcon = (iconName: string, size = 12) => {
     switch(iconName) {
-          case 'visa': return <FileText size={12} />;
-          case 'money': return <Banknote size={12} />;
-          case 'leisure': return <Coffee size={12} />;
-          case 'other': return <MoreHorizontal size={12} />;
-          case 'food': return <Utensils size={12} />;
-          case 'animals': return <Cat size={12} />;
-          case 'housing': return <Home size={12} />;
-          case 'law': return <Scale size={12} />;
-          case 'health': return <Heart size={12} />;
-          case 'internet': return <Wifi size={12} />;
-          case 'beauty': return <Sparkles size={12} />;
-          case 'culture': return <Landmark size={12} />;
-          case 'courses': return <BookOpen size={12} />;
-          case 'nostrification': return <GraduationCap size={12} />;
-          case 'education': return <School size={12} />;
-          case 'society': return <Users size={12} />;
-          case 'reviews': return <Star size={12} />;
-          case 'shopping': return <ShoppingBag size={12} />;
-          case 'help': return <HelpCircle size={12} />;
-          case 'travel': return <Plane size={12} />;
-          case 'job': return <Briefcase size={12} />;
-          case 'family': return <Baby size={12} />;
-          case 'sport': return <Dumbbell size={12} />;
-          case 'transport': return <Bus size={12} />;
-          case 'services': return <Wrench size={12} />;
-          case 'humor': return <Smile size={12} />;
-          case 'language': return <Languages size={12} />;
-          case 'events': return <Calendar size={12} />;
-          default: return <MessageSquare size={12} />;
+          case 'visa': return <FileText size={size} />;
+          case 'money': return <Banknote size={size} />;
+          case 'leisure': return <Coffee size={size} />;
+          case 'other': return <MoreHorizontal size={size} />;
+          case 'food': return <Utensils size={size} />;
+          case 'animals': return <Cat size={size} />;
+          case 'housing': return <Home size={size} />;
+          case 'law': return <Scale size={size} />;
+          case 'health': return <Heart size={size} />;
+          case 'internet': return <Wifi size={size} />;
+          case 'beauty': return <Sparkles size={size} />;
+          case 'culture': return <Landmark size={size} />;
+          case 'courses': return <BookOpen size={size} />;
+          case 'nostrification': return <GraduationCap size={size} />;
+          case 'education': return <School size={size} />;
+          case 'society': return <Users size={size} />;
+          case 'reviews': return <Star size={size} />;
+          case 'shopping': return <ShoppingBag size={size} />;
+          case 'travel': return <Plane size={size} />;
+          case 'job': return <Briefcase size={size} />;
+          case 'family': return <Baby size={size} />;
+          case 'sport': return <Dumbbell size={size} />;
+          case 'transport': return <Bus size={size} />;
+          case 'services': return <Wrench size={size} />;
+          case 'humor': return <Smile size={size} />;
+          case 'language': return <Languages size={size} />;
+          case 'events': return <Calendar size={size} />;
+          case 'auto': return <Car size={size} />;
+          case 'dating': return <HeartHandshake size={size} />;
+          default: return <MessageSquare size={size} />;
     }
 };
 
@@ -61,34 +62,53 @@ export const Feed: React.FC = () => {
   const t = translations[language];
   
   // Filter State
-  const [activeCategoryId, setActiveCategoryId] = useState<string>('all');
+  const [activeSubCategoryId, setActiveSubCategoryId] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'new' | 'popular'>('new');
 
   useEffect(() => {
-    if (!selectedLocation) navigate('/location');
+    if (!selectedLocation) {
+        // Small timeout to allow state to settle before redirecting
+        const timer = setTimeout(() => navigate('/location'), 500);
+        return () => clearTimeout(timer);
+    }
   }, [selectedLocation, navigate]);
 
-  if (!selectedLocation) return null;
+  // FIX: Render loader instead of null (black screen) while location loads
+  if (!selectedLocation) {
+      return (
+          <div className="min-h-screen bg-bg flex items-center justify-center text-white">
+              <Loader2 className="animate-spin text-primary" size={32} />
+          </div>
+      );
+  }
 
   // Filter Logic
   const locationQuestions = questions.filter(q => {
       // 1. Get the full location object for this specific question
       const questionLocation = availableLocations.find(l => l.id === q.locationId);
       
-      if (!questionLocation) return false;
+      // If location not loaded yet, include it cautiously or exclude. 
+      // Excluding for safety to prevent crashes, but if it's the selected location it usually exists.
+      if (!questionLocation) {
+          // Edge case: if q.locationId matches selectedLocation.id directly, allow it even if not in availableLocations list yet
+          if (q.locationId === selectedLocation.id) return true;
+          return false;
+      }
 
-      // 2. Check for Direct Match (e.g. Question is in "Prague" and we selected "Prague")
+      // 2. Check for Direct Match
       const isDirectMatch = q.locationId === selectedLocation.id;
 
-      // 3. Check for Child Match (e.g. Question is in "Prague", we selected "Czechia", and Prague's parent is Czechia)
-      // This is only valid if the User selected a COUNTRY.
+      // 3. Check for Child Match
       const isChildMatch = selectedLocation.type === LocationType.COUNTRY && 
                            questionLocation.parentId === selectedLocation.id;
 
       const matchesLocation = isDirectMatch || isChildMatch;
       
       // Category Check
-      const matchesCategory = activeCategoryId === 'all' || q.categoryId === activeCategoryId;
+      let matchesCategory = true;
+      if (activeSubCategoryId !== 'all') {
+          matchesCategory = q.categoryId === activeSubCategoryId;
+      }
       
       return matchesLocation && matchesCategory;
   });
@@ -96,10 +116,8 @@ export const Feed: React.FC = () => {
   // Sort Logic
   const sortedQuestions = [...locationQuestions].sort((a, b) => {
       if (sortBy === 'popular') {
-          // Primary: Views, Secondary: Likes
           return (b.views + ((b.likes || 0) * 5)) - (a.views + ((a.likes || 0) * 5));
       }
-      // Default: Newest
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
 
@@ -107,7 +125,6 @@ export const Feed: React.FC = () => {
     <div className="pb-24 min-h-screen bg-bg page-transition font-sans">
       {/* Header */}
       <header className="sticky top-0 z-20 bg-bg/95 backdrop-blur-xl px-4 py-4 flex items-center justify-between border-b border-white/5">
-        {/* Left: App Logo */}
         <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shadow-lg shadow-primary/20">
                 <Globe size={20} className="text-white" strokeWidth={2} />
@@ -115,7 +132,6 @@ export const Feed: React.FC = () => {
             <span className="font-bold text-xl text-white tracking-tight">AskQ</span>
         </div>
         
-        {/* Right: Location Selector */}
         <div className="flex items-center gap-3">
             <button 
                 onClick={() => navigate('/location')}
@@ -131,7 +147,7 @@ export const Feed: React.FC = () => {
 
       <div className="p-4 space-y-6">
         
-        {/* Tasks Minimalist Banner */}
+        {/* Tasks Banner */}
         <div 
             onClick={() => navigate('/tasks')}
             className="w-full bg-card rounded-3xl p-4 border border-white/5 flex items-center justify-between shadow-sm active:scale-[0.98] transition-all cursor-pointer group"
@@ -150,7 +166,6 @@ export const Feed: React.FC = () => {
             </div>
         </div>
 
-        {/* Controls: Sort & Filters */}
         <div className="space-y-4">
             
             {/* Sort Toggles */}
@@ -179,24 +194,24 @@ export const Feed: React.FC = () => {
                 </button>
             </div>
 
-            {/* Category Filters */}
+            {/* Category Filter (Flat List) */}
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
                 <button
-                    onClick={() => setActiveCategoryId('all')}
-                    className={`px-5 py-2.5 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${
-                        activeCategoryId === 'all'
+                    onClick={() => setActiveSubCategoryId('all')}
+                    className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${
+                        activeSubCategoryId === 'all'
                         ? 'bg-primary text-white border-primary shadow-md' 
                         : 'bg-card text-secondary border-transparent active:bg-white/10'
                     }`}
                 >
                     {t['feed.tags.all']}
                 </button>
-                {categories.map((cat) => (
+                {categories.map(cat => (
                     <button
                         key={cat.id}
-                        onClick={() => setActiveCategoryId(cat.id)}
-                        className={`px-5 py-2.5 rounded-full text-xs font-bold whitespace-nowrap transition-all border flex items-center gap-2 ${
-                            activeCategoryId === cat.id 
+                        onClick={() => setActiveSubCategoryId(cat.id)}
+                        className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all border flex items-center gap-2 ${
+                            activeSubCategoryId === cat.id 
                             ? 'bg-primary text-white border-primary shadow-md' 
                             : 'bg-card text-secondary border-transparent active:bg-white/10'
                         }`}
@@ -220,13 +235,10 @@ export const Feed: React.FC = () => {
                         onClick={() => navigate(`/question/${q.id}`)}
                         className="bg-card p-5 rounded-[24px] border border-white/5 active:scale-[0.98] transition-all shadow-sm"
                     >
-                        {/* Card Header: Category & Date */}
                         <div className="flex justify-between items-start mb-3">
                              <div className="flex gap-2">
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-primary bg-primary/10 px-2 py-1 rounded-lg flex items-center gap-1">
-                                    {/* Find Category Icon */}
                                     {getCategoryIcon(categories.find(c => c.id === q.categoryId)?.icon || '')}
-                                    {/* Find Category Name */}
                                     {t[categories.find(c => c.id === q.categoryId)?.name || '']}
                                 </span>
                             </div>
@@ -258,7 +270,6 @@ export const Feed: React.FC = () => {
                         )}
 
                         <div className="flex items-center justify-between text-secondary text-xs border-t border-white/5 pt-3 mt-2">
-                            {/* Bottom Left: Location */}
                             <div className="flex items-center">
                                 {selectedLocation.type === LocationType.COUNTRY && q.locationId !== selectedLocation.id && (
                                     <span className="text-[10px] font-bold text-white flex items-center gap-1 bg-white/5 px-2 py-1 rounded-lg">
@@ -268,7 +279,6 @@ export const Feed: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* Bottom Right: Likes & Comments */}
                             <div className="flex items-center gap-4">
                                 <div className="flex items-center gap-1.5">
                                     <ThumbsUp size={16} className="text-secondary" strokeWidth={2} />

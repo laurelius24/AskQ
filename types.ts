@@ -106,6 +106,14 @@ export interface Category {
   icon: string;
 }
 
+// New: Category Group for hierarchy
+export interface CategoryGroup {
+    id: string;
+    name: string; // Translation key
+    icon: string;
+    childrenIds: string[];
+}
+
 // 4. Question
 export interface Question {
   id: string;

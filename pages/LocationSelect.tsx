@@ -2,13 +2,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
-import { Search, ChevronRight, ArrowLeft, Globe, MapPin, X, Loader2 } from 'lucide-react';
+import { Search, ChevronRight, ArrowLeft, Globe, MapPin, X, Loader2, MessageCircle } from 'lucide-react';
 import { LocationType, LocationContext } from '../types';
 import { translations } from '../translations';
-import { loadGoogleMapsScript, searchCities, searchCountries, getCountryCode, GooglePlaceResult } from '../services/googlePlaces';
+import { loadGoogleMapsScript, searchCities, searchCountries, getCountryCode, GooglePlaceResult, getFlagEmoji } from '../services/googlePlaces';
 
 export const LocationSelect: React.FC = () => {
-  const { availableLocations, setLocation, language, selectedLocation } = useStore();
+  const { availableLocations, setLocation, saveLocation, language, selectedLocation, questions } = useStore();
   const navigate = useNavigate();
   const t = translations[language];
 
@@ -26,6 +26,31 @@ export const LocationSelect: React.FC = () => {
   useEffect(() => {
       loadGoogleMapsScript().then(() => setIsGoogleLoaded(true));
   }, []);
+
+  // Calculate question counts per location
+  const locationCounts = useMemo(() => {
+      const counts: Record<string, number> = {};
+      const parentMap = new Map<string, string>();
+      
+      // Map child locations to parents for aggregation
+      availableLocations.forEach(l => {
+          if (l.parentId) parentMap.set(l.id, l.parentId);
+      });
+
+      questions.forEach(q => {
+          // Direct count (e.g. Question assigned to City or Country)
+          counts[q.locationId] = (counts[q.locationId] || 0) + 1;
+          
+          // Parent aggregation (e.g. Question assigned to City adds to Country count)
+          const pId = parentMap.get(q.locationId);
+          if (pId) {
+              counts[pId] = (counts[pId] || 0) + 1;
+          }
+      });
+      return counts;
+  }, [questions, availableLocations]);
+
+  const getCount = (id?: string) => id ? (locationCounts[id] || 0) : 0;
 
   useEffect(() => {
       if (step === 'COUNTRY' && !searchQuery) {
@@ -120,7 +145,36 @@ export const LocationSelect: React.FC = () => {
 
     if (item.originalObj) {
         // Local DB Country
-        countryCtx = { ...item.originalObj, isoCode: item.originalObj.isoCode || item.originalObj.id };
+        countryCtx = { ...item.originalObj };
+        
+        // REPAIR LOGIC: If existing DB item is missing flag or isoCode, try to fix it now
+        if (countryCtx.type === LocationType.COUNTRY && (!countryCtx.flagEmoji || !countryCtx.isoCode)) {
+             let code = countryCtx.isoCode;
+             
+             // 1. If no ISO code, try to fetch or infer it
+             if (!code) {
+                 if (countryCtx.id.startsWith('gl_')) {
+                     // Google ID: fetch details
+                     const placeId = countryCtx.id.replace('gl_', '');
+                     try {
+                         const fetched = await getCountryCode(placeId);
+                         if (fetched) code = fetched;
+                     } catch(e) { console.warn("Failed to fetch ISO for", countryCtx.name); }
+                 } else if (countryCtx.id.length === 2) {
+                     // Standard 2-letter ID
+                     code = countryCtx.id;
+                 }
+             }
+             
+             // 2. If we found a code, update the object (setLocation will save it to DB)
+             if (code) {
+                 countryCtx.isoCode = code;
+                 if (!countryCtx.flagEmoji) countryCtx.flagEmoji = getFlagEmoji(code);
+                 // Persist repair immediately
+                 await saveLocation(countryCtx);
+             }
+        }
+
     } else {
         // Google Result Country - Fetch ISO Code for strict filtering
         const placeId = item.place_id;
@@ -130,7 +184,7 @@ export const LocationSelect: React.FC = () => {
             id: `gl_${placeId}`,
             name: item.structured_formatting.main_text,
             type: LocationType.COUNTRY,
-            flagEmoji: '🌐', 
+            flagEmoji: getFlagEmoji(fetchedIsoCode), 
             parentId: null, 
             isoCode: fetchedIsoCode || undefined 
         };
@@ -162,6 +216,7 @@ export const LocationSelect: React.FC = () => {
     }
 
     if (selectedCountry.id.startsWith('gl_')) {
+        // Ensure parent country is saved/updated in DB with potential flag fixes
         await setLocation(selectedCountry);
     }
 
@@ -180,22 +235,35 @@ export const LocationSelect: React.FC = () => {
     }
   };
 
-  const renderResultItem = (item: any, isCity: boolean) => (
-    <button
-        key={item.place_id || item.id}
-        onClick={() => isCity ? handleCitySelect(item) : handleCountrySelect(item)}
-        className="w-full flex items-center gap-4 p-4 rounded-2xl border border-white/5 shadow-sm hover:border-primary/50 active:scale-[0.98] transition-all bg-card mb-2"
-      >
-        <div className="w-10 h-10 rounded-full bg-input flex items-center justify-center text-2xl">
-            {isCity ? <MapPin size={24} className="text-primary" /> : (item.originalObj?.flagEmoji || <Globe size={24} className="text-secondary" />)}
-        </div>
-        <div className="text-left flex-1">
-            <div className="font-bold text-white">{item.structured_formatting.main_text}</div>
-            {!item.originalObj && <span className="text-[10px] text-secondary">Google Search</span>}
-        </div>
-        <ChevronRight className="text-secondary" size={20} />
-      </button>
-  );
+  const renderResultItem = (item: any, isCity: boolean) => {
+    const itemId = item.originalObj?.id;
+    const count = getCount(itemId);
+
+    return (
+      <button
+          key={item.place_id || item.id}
+          onClick={() => isCity ? handleCitySelect(item) : handleCountrySelect(item)}
+          className="w-full flex items-center gap-4 p-4 rounded-2xl border border-white/5 shadow-sm hover:border-primary/50 active:scale-[0.98] transition-all bg-card mb-2"
+        >
+          <div className="w-10 h-10 rounded-full bg-input flex items-center justify-center text-2xl">
+              {isCity ? <MapPin size={24} className="text-primary" /> : (item.originalObj?.flagEmoji || <Globe size={24} className="text-secondary" />)}
+          </div>
+          <div className="text-left flex-1">
+              <div className="font-bold text-white">{item.structured_formatting.main_text}</div>
+              {!item.originalObj && <span className="text-[10px] text-secondary">Google Search</span>}
+          </div>
+          
+          {count > 10 && (
+             <div className="flex items-center gap-1 text-xs font-bold text-secondary bg-white/5 px-2 py-1 rounded-lg mr-1">
+                 <MessageCircle size={12} />
+                 {count}
+             </div>
+          )}
+          
+          <ChevronRight className="text-secondary" size={20} />
+        </button>
+    );
+  };
 
   return (
     <div className="h-screen flex flex-col bg-bg text-white page-transition overflow-hidden">
@@ -258,6 +326,12 @@ export const LocationSelect: React.FC = () => {
                             <div className="text-left flex-1">
                                 <div className="font-bold text-white">{suggestedCountry.name}</div>
                             </div>
+                             {getCount(suggestedCountry.id) > 10 && (
+                                <div className="flex items-center gap-1 text-xs font-bold text-secondary bg-white/5 px-2 py-1 rounded-lg mr-1">
+                                    <MessageCircle size={12} />
+                                    {getCount(suggestedCountry.id)}
+                                </div>
+                             )}
                             <ChevronRight className="text-secondary" size={20} />
                         </button>
                     </>
@@ -292,12 +366,18 @@ export const LocationSelect: React.FC = () => {
                         className="w-full flex items-center gap-4 p-4 rounded-2xl border border-primary/30 bg-primary/10 hover:bg-primary/20 transition-all mb-4"
                     >
                         <div className="w-10 h-10 rounded-full bg-card flex items-center justify-center text-xl shadow-sm">
-                            <Globe size={20} className="text-primary" />
+                            {selectedCountry.flagEmoji || <Globe size={20} className="text-primary" />}
                         </div>
                         <div className="text-left flex-1">
                             <div className="font-bold text-white">{t['loc.all_country']} {selectedCountry.name}</div>
                             <div className="text-xs text-primary">{t['loc.general']}</div>
                         </div>
+                         {getCount(selectedCountry.id) > 10 && (
+                            <div className="flex items-center gap-1 text-xs font-bold text-secondary bg-white/5 px-2 py-1 rounded-lg mr-1">
+                                <MessageCircle size={12} />
+                                {getCount(selectedCountry.id)}
+                            </div>
+                         )}
                         <ChevronRight className="text-primary" size={20} />
                     </button>
                 )}
@@ -308,21 +388,30 @@ export const LocationSelect: React.FC = () => {
                         <h3 className="text-xs font-bold text-secondary uppercase tracking-wider mb-2">Popular Cities</h3>
                         {availableLocations
                             .filter(l => l.type === LocationType.CITY && l.parentId === selectedCountry.id)
-                            .map(city => (
-                                <button
-                                    key={city.id}
-                                    onClick={() => { setLocation(city); navigate('/'); }}
-                                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-white/5 shadow-sm hover:border-primary/50 active:scale-[0.98] transition-all bg-card mb-2"
-                                >
-                                    <div className="w-10 h-10 rounded-full bg-input flex items-center justify-center text-2xl">
-                                        <MapPin size={24} className="text-primary" />
-                                    </div>
-                                    <div className="text-left flex-1">
-                                        <div className="font-bold text-white">{city.name}</div>
-                                    </div>
-                                    <ChevronRight className="text-secondary" size={20} />
-                                </button>
-                            ))
+                            .map(city => {
+                                const count = getCount(city.id);
+                                return (
+                                    <button
+                                        key={city.id}
+                                        onClick={() => { setLocation(city); navigate('/'); }}
+                                        className="w-full flex items-center gap-4 p-4 rounded-2xl border border-white/5 shadow-sm hover:border-primary/50 active:scale-[0.98] transition-all bg-card mb-2"
+                                    >
+                                        <div className="w-10 h-10 rounded-full bg-input flex items-center justify-center text-2xl">
+                                            <MapPin size={24} className="text-primary" />
+                                        </div>
+                                        <div className="text-left flex-1">
+                                            <div className="font-bold text-white">{city.name}</div>
+                                        </div>
+                                        {count > 10 && (
+                                            <div className="flex items-center gap-1 text-xs font-bold text-secondary bg-white/5 px-2 py-1 rounded-lg mr-1">
+                                                <MessageCircle size={12} />
+                                                {count}
+                                            </div>
+                                        )}
+                                        <ChevronRight className="text-secondary" size={20} />
+                                    </button>
+                                );
+                            })
                         }
                     </>
                 )}

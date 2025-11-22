@@ -1,5 +1,10 @@
 
 
+
+
+
+
+
 import { Language } from './types';
 
 type TranslationKeys = {
@@ -141,9 +146,9 @@ export const translations: Dictionary = {
     'ask.add_photo': 'Добавить фото',
     'ask.tap_select': 'Нажмите для выбора',
 
-    // Categories
+    // Categories (Subcategories)
     'cat.visa': 'Виза',
-    'cat.money': 'Деньги',
+    'cat.finance': 'Финансы',
     'cat.leisure': 'Досуг',
     'cat.other': 'Другое',
     'cat.food': 'Еда',
@@ -160,7 +165,6 @@ export const translations: Dictionary = {
     'cat.society': 'Общество',
     'cat.reviews': 'Отзывы',
     'cat.shopping': 'Покупки',
-    'cat.help': 'Помощь',
     'cat.travel': 'Путешествия',
     'cat.job': 'Работа',
     'cat.family': 'Семья',
@@ -169,6 +173,20 @@ export const translations: Dictionary = {
     'cat.services': 'Услуги',
     'cat.humor': 'Юмор',
     'cat.language': 'Язык',
+    'cat.events': 'События',
+    'cat.auto': 'Авто',
+    'cat.dating': 'Знакомства',
+    
+    // Category Groups
+    'group.bureaucracy': 'Документы и Закон',
+    'group.finance': 'Работа и Деньги',
+    'group.living': 'Быт и Жизнь',
+    'group.education': 'Образование',
+    'group.health': 'Здоровье и Спорт',
+    'group.leisure': 'Досуг и Еда',
+    'group.social': 'Общение',
+    'group.shopping': 'Покупки',
+    'group.other': 'Разное',
 
     // Question Detail
     'q.question': 'Вопрос',

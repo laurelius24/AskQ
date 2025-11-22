@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Send, ThumbsUp, Gift, VenetianMask, CheckCircle2, MoreHorizontal, Trash2, Share2, AlertTriangle, X, ChevronDown, ChevronUp, CornerDownRight } from 'lucide-react';
 import { useStore, MIN_LIKES_FOR_BEST } from '../store';
 import { translations } from '../translations';
-import { Answer } from '../types';
+import { Answer, User } from '../types';
 import { PageHeader } from '../components/PageHeader';
 import { ImageViewer } from '../components/ImageViewer';
 
@@ -91,7 +91,7 @@ export const QuestionDetail: React.FC = () => {
 
   // Mentions
   const filteredUsers = mentionQuery 
-      ? Object.values(allUsers).filter(u => u.username.includes(mentionQuery) || u.displayName.toLowerCase().includes(mentionQuery))
+      ? (Object.values(allUsers) as User[]).filter(u => u.username.includes(mentionQuery) || u.displayName.toLowerCase().includes(mentionQuery))
       : [];
 
   const handleLikeQuestion = () => toggleLike(storeQuestion.id, 'QUESTION');

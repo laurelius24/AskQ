@@ -1,5 +1,5 @@
 
-import React, { useEffect } from 'react';
+import React, { Component, ErrorInfo, ReactNode, useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Feed } from './pages/Feed';
@@ -19,7 +19,55 @@ import { SelectLocationForQuestion } from './pages/SelectLocationForQuestion';
 import { SelectCategoryForQuestion } from './pages/SelectCategoryForQuestion';
 import { Inventory } from './pages/Inventory';
 import { useStore } from './store';
-import { Globe } from 'lucide-react';
+import { Globe, RefreshCw, AlertTriangle } from 'lucide-react';
+
+// --- Error Boundary to prevent White/Black Screen of Death ---
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="h-screen w-full bg-black flex flex-col items-center justify-center text-white p-6 text-center">
+          <AlertTriangle size={48} className="text-red-500 mb-4" />
+          <h2 className="text-xl font-bold mb-2">Something went wrong</h2>
+          <p className="text-gray-400 text-sm mb-6 max-w-xs break-words">
+            {this.state.error?.message || "Unknown error occurred"}
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl flex items-center gap-2 transition-colors"
+          >
+            <RefreshCw size={20} />
+            Reload App
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 // --- Telegram Navigation Sync Component ---
 const TelegramNavigator = () => {
@@ -31,10 +79,14 @@ const TelegramNavigator = () => {
         if (!tg) return;
 
         // 1. Force Fullscreen
-        tg.ready();
-        tg.expand();
-        tg.setHeaderColor('#000000');
-        tg.setBackgroundColor('#000000');
+        try {
+            tg.ready();
+            tg.expand();
+            tg.setHeaderColor('#000000');
+            tg.setBackgroundColor('#000000');
+        } catch (e) {
+            console.warn("Telegram WebApp API error", e);
+        }
 
         // 2. Handle Native Back Button
         const handleBack = () => {
@@ -121,87 +173,89 @@ const App: React.FC = () => {
   }
 
   return (
-    <HashRouter>
-        <TelegramNavigator />
-        <Routes>
-            {/* Public / Onboarding Route - Protected against Logged In users */}
-            <Route path="/onboarding" element={
-                <PublicOnlyRoute>
-                    <Onboarding />
-                </PublicOnlyRoute>
-            } />
+    <ErrorBoundary>
+        <HashRouter>
+            <TelegramNavigator />
+            <Routes>
+                {/* Public / Onboarding Route - Protected against Logged In users */}
+                <Route path="/onboarding" element={
+                    <PublicOnlyRoute>
+                        <Onboarding />
+                    </PublicOnlyRoute>
+                } />
 
-            {/* Settings & Location */}
-            <Route path="/location" element={
-                <ProtectedRoute>
-                    <LocationSelect />
-                </ProtectedRoute>
-            } />
-            
-             <Route path="/settings" element={
-                <ProtectedRoute>
-                    <Settings />
-                </ProtectedRoute>
-            } />
+                {/* Settings & Location */}
+                <Route path="/location" element={
+                    <ProtectedRoute>
+                        <LocationSelect />
+                    </ProtectedRoute>
+                } />
+                
+                <Route path="/settings" element={
+                    <ProtectedRoute>
+                        <Settings />
+                    </ProtectedRoute>
+                } />
 
-            {/* Wallet Routes */}
-            <Route path="/wallet/stars" element={
-                <ProtectedRoute>
-                    <WalletStars />
-                </ProtectedRoute>
-            } />
+                {/* Wallet Routes */}
+                <Route path="/wallet/stars" element={
+                    <ProtectedRoute>
+                        <WalletStars />
+                    </ProtectedRoute>
+                } />
 
-            <Route path="/wallet/blast" element={
-                <ProtectedRoute>
-                    <WalletBlast />
-                </ProtectedRoute>
-            } />
+                <Route path="/wallet/blast" element={
+                    <ProtectedRoute>
+                        <WalletBlast />
+                    </ProtectedRoute>
+                } />
 
-            <Route path="/inventory" element={
-                <ProtectedRoute>
-                    <Inventory />
-                </ProtectedRoute>
-            } />
+                <Route path="/inventory" element={
+                    <ProtectedRoute>
+                        <Inventory />
+                    </ProtectedRoute>
+                } />
 
-            {/* Standalone Pages (Full Screen) */}
-            <Route path="/ask" element={
-                <ProtectedRoute>
-                    <AskQuestion />
-                </ProtectedRoute>
-            } />
+                {/* Standalone Pages (Full Screen) */}
+                <Route path="/ask" element={
+                    <ProtectedRoute>
+                        <AskQuestion />
+                    </ProtectedRoute>
+                } />
 
-            <Route path="/ask/location" element={
-                <ProtectedRoute>
-                    <SelectLocationForQuestion />
-                </ProtectedRoute>
-            } />
+                <Route path="/ask/location" element={
+                    <ProtectedRoute>
+                        <SelectLocationForQuestion />
+                    </ProtectedRoute>
+                } />
 
-            <Route path="/ask/category" element={
-                <ProtectedRoute>
-                    <SelectCategoryForQuestion />
-                </ProtectedRoute>
-            } />
+                <Route path="/ask/category" element={
+                    <ProtectedRoute>
+                        <SelectCategoryForQuestion />
+                    </ProtectedRoute>
+                } />
 
-            <Route path="/tasks" element={
-                <ProtectedRoute>
-                    <Tasks />
-                </ProtectedRoute>
-            } />
+                <Route path="/tasks" element={
+                    <ProtectedRoute>
+                        <Tasks />
+                    </ProtectedRoute>
+                } />
 
-            <Route path="/question/:id" element={
-                <ProtectedRoute>
-                    <QuestionDetail />
-                </ProtectedRoute>
-            } />
+                <Route path="/question/:id" element={
+                    <ProtectedRoute>
+                        <QuestionDetail />
+                    </ProtectedRoute>
+                } />
 
-            {/* Main App Routes wrapped in Layout and Protection */}
-            <Route path="/*" element={
-                <ProtectedRoute>
-                    <MainLayoutWrapper />
-                </ProtectedRoute>
-            } />
-        </Routes>
-    </HashRouter>
+                {/* Main App Routes wrapped in Layout and Protection */}
+                <Route path="/*" element={
+                    <ProtectedRoute>
+                        <MainLayoutWrapper />
+                    </ProtectedRoute>
+                } />
+            </Routes>
+        </HashRouter>
+    </ErrorBoundary>
   );
 };
 
